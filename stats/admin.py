@@ -12,3 +12,12 @@ class StatisticaCalciatoreAdmin(admin.ModelAdmin):
     list_display = ('calciatore_stagione', 'partite_a_voto', 'media_voto', 'fanta_media', 'gol_fatti')
     list_filter = ('calciatore_stagione__stagione',)
     search_fields = ('calciatore_stagione__calciatore__cognome',)
+
+from django.urls import reverse
+from django.http import HttpResponseRedirect
+from .models import DashboardLink
+
+@admin.register(DashboardLink)
+class DashboardLinkAdmin(admin.ModelAdmin):
+    def changelist_view(self, request, extra_context=None):
+        return HttpResponseRedirect(reverse('import_dashboard'))

@@ -38,3 +38,9 @@ class StatisticaCalciatore(models.Model):
     ammonizioni = models.PositiveIntegerField('Amm', default=0)
     espulsioni = models.PositiveIntegerField('Esp', default=0)
     autogol = models.PositiveIntegerField('Au', default=0)
+
+class DashboardLink(models.Model):
+    class Meta:
+        managed = False
+        verbose_name = "↗️ Vai alla Dashboard Import"
+        verbose_name_plural = "↗️ Vai alla Dashboard Import"

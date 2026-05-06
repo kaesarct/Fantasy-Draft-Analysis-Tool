@@ -19,3 +19,26 @@ class SquadraReale(models.Model):
 
     def __str__(self):
         return self.nome
+
+class ImportTask(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'In Attesa'),
+        ('RUNNING', 'In Corso'),
+        ('COMPLETED', 'Completato'),
+        ('ERROR', 'Errore'),
+    ]
+    
+    task_name = models.CharField(max_length=100)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    total_items = models.IntegerField(default=0)
+    processed_items = models.IntegerField(default=0)
+    error_message = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Task di Importazione"
+        verbose_name_plural = "Task di Importazione"
+
+    def __str__(self):
+        return f"{self.task_name} - {self.get_status_display()} ({self.processed_items}/{self.total_items})"

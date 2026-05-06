@@ -11,9 +11,14 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Carica il file .env se esiste
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
 # Quick-start development settings - unsuitable for production
@@ -131,3 +136,14 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+import datetime
+
+# Calcolo Dinamico Stagione Fantacalcio
+# Se siamo da Agosto in poi (mese >= 8), inizia la nuova stagione di quell'anno.
+# Altrimenti siamo ancora nella stagione iniziata l'anno precedente.
+_oggi = datetime.date.today()
+CURRENT_SEASON_START_YEAR = _oggi.year if _oggi.month >= 8 else _oggi.year - 1
+
+# Sappiamo che il 2025/2026 corrisponde all'ID 20. Quindi 2025 - 2005 = 20
+CURRENT_SEASON_ID = CURRENT_SEASON_START_YEAR - 2005
