@@ -3,218 +3,36 @@
 
 {% block extrastyle %}
 {{ block.super }}
-<style>
-    /* Integrazione con i colori di Django Light/Dark mode */
-    :root {
-        --card-bg: var(--body-bg, #fff);
-        --card-border: var(--hairline-color, #e0e0e0);
-        --text-color: var(--body-fg, #333);
-        --text-muted: var(--body-quiet-color, #666);
-    }
-    
-    .dashboard-container {
-        padding: 20px 0;
-        max-width: 1200px;
-    }
-    
-    .header-title {
-        font-size: 24px;
-        font-weight: 300;
-        margin-bottom: 30px;
-        color: var(--text-color);
-        border-bottom: 1px solid var(--card-border);
-        padding-bottom: 10px;
-    }
-
-    .cards-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-        gap: 25px;
-        margin-bottom: 40px;
-    }
-
-    .action-card {
-        background-color: var(--darkened-bg, var(--module-bg, #f8f8f8));
-        border: 1px solid var(--card-border);
-        border-radius: 8px;
-        padding: 25px;
-        transition: transform 0.2s, box-shadow 0.2s;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .action-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    }
-
-    .card-icon {
-        font-size: 2.5rem;
-        margin-bottom: 15px;
-    }
-
-    .card-title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        margin: 0 0 10px 0;
-        color: var(--text-color);
-    }
-
-    .card-desc {
-        color: var(--text-muted);
-        font-size: 0.95rem;
-        line-height: 1.5;
-        flex-grow: 1;
-        margin-bottom: 20px;
-    }
-
-    .btn-action {
-        background-color: var(--button-bg, #79aec8);
-        color: var(--button-fg, #fff);
-        border: none;
-        padding: 12px 20px;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: bold;
-        cursor: pointer;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        transition: background-color 0.2s;
-        width: 100%;
-        text-align: center;
-    }
-
-    .btn-action:hover {
-        background-color: var(--button-hover-bg, #609ab6);
-        color: var(--button-fg, #fff);
-    }
-    
-    .btn-primary {
-        background-color: var(--default-button-bg, #417690);
-    }
-    .btn-primary:hover {
-        background-color: var(--default-button-hover-bg, #205067);
-    }
-
-    .progress-wrapper {
-        background-color: var(--darkened-bg, var(--module-bg, #f8f8f8));
-        border: 1px solid var(--card-border);
-        border-left: 5px solid var(--default-button-bg, #417690);
-        border-radius: 8px;
-        padding: 25px;
-        margin-bottom: 40px;
-        display: none;
-    }
-
-    .progress-track {
-        width: 100%;
-        background-color: var(--card-border);
-        height: 24px;
-        border-radius: 12px;
-        overflow: hidden;
-        margin-top: 15px;
-        position: relative;
-    }
-
-    .progress-fill {
-        width: 0%;
-        height: 100%;
-        background-color: var(--default-button-bg, #417690);
-        transition: width 0.4s ease;
-        position: relative;
-        overflow: hidden;
-    }
-
-    /* Animazione a strisce per la barra di progresso */
-    .progress-fill::after {
-        content: "";
-        position: absolute;
-        top: 0; left: 0; bottom: 0; right: 0;
-        background-image: linear-gradient(
-            45deg,
-            rgba(255, 255, 255, 0.15) 25%,
-            transparent 25%,
-            transparent 50%,
-            rgba(255, 255, 255, 0.15) 50%,
-            rgba(255, 255, 255, 0.15) 75%,
-            transparent 75%,
-            transparent
-        );
-        background-size: 1rem 1rem;
-        animation: progress-stripes 1s linear infinite;
-    }
-
-    @keyframes progress-stripes {
-        from { background-position: 1rem 0; }
-        to { background-position: 0 0; }
-    }
-
-    .task-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 20px;
-    }
-    
-    .task-table th {
-        text-transform: uppercase;
-        font-size: 11px;
-        letter-spacing: 1px;
-        color: var(--text-muted);
-        padding: 12px;
-        border-bottom: 2px solid var(--card-border);
-    }
-
-    .task-table td {
-        padding: 12px;
-        border-bottom: 1px solid var(--card-border);
-        color: var(--text-color);
-    }
-    
-    .status-badge {
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 11px;
-        font-weight: bold;
-        display: inline-block;
-    }
-    .status-PENDING { background: #ffc107; color: #000; }
-    .status-RUNNING { background: #2196f3; color: #fff; }
-    .status-COMPLETED { background: #4caf50; color: #fff; }
-    .status-ERROR { background: #f44336; color: #fff; }
-
-    .btn-danger {
-        background-color: var(--delete-button-bg, #ba2121);
-    }
-    .btn-danger:hover {
-        background-color: var(--delete-button-hover-bg, #a41515);
-    }
-
-</style>
+{% load static %}
+<link rel="stylesheet" href="{% static 'stats/css/dashboard.css' %}">
 {% endblock %}
 
 {% block content %}
 <div id="content-main" class="dashboard-container">
     <h1 class="header-title">Dashboard Operativa Importazioni</h1>
-    
+
     <div class="cards-grid">
         <!-- Card 1 -->
         <div class="action-card">
             <div class="card-icon">📥</div>
             <h2 class="card-title">1. Download API</h2>
-            <p class="card-desc">Scarica o aggiorna i file Excel ufficiali dal 2015 a oggi. Questa operazione interroga direttamente i server Fantacalcio.</p>
+            <p class="card-desc">Scarica o aggiorna i file Excel ufficiali dal 2015 a oggi. Questa operazione interroga
+                direttamente i server Fantacalcio.</p>
             <button onclick="startTask('download_stats')" class="btn-action btn-primary" style="margin-bottom: 10px;">
                 Download Statistiche
             </button>
-            <button onclick="startTask('download_voti')" class="btn-action btn-primary" style="background-color: #2b4b5c;">
+            <button onclick="startTask('download_voti')" class="btn-action btn-primary"
+                style="background-color: #2b4b5c;">
                 Download Voti Giornate (Lento)
             </button>
         </div>
-        
+
         <!-- Card 2 -->
         <div class="action-card">
             <div class="card-icon">💾</div>
             <h2 class="card-title">2. Importazione Database</h2>
-            <p class="card-desc">Legge i file presenti in locale e li inserisce massivamente nel DB. Ricorda di importare le Statistiche PRIMA dei Voti!</p>
+            <p class="card-desc">Legge i file presenti in locale e li inserisce massivamente nel DB. Ricorda di
+                importare le Statistiche PRIMA dei Voti!</p>
             <button onclick="startTask('import_stats')" class="btn-action" style="margin-bottom: 10px;">
                 Importa Statistiche
             </button>
@@ -222,12 +40,46 @@
                 Importa Voti
             </button>
         </div>
-        
+
+        <!-- Card 4: Preasta -->
+        <div class="action-card" style="border-color: #9c27b0;">
+            <div class="card-icon">📈</div>
+            <h2 class="card-title" style="color: #9c27b0;">3. Importa Pre-Asta</h2>
+            <p class="card-desc">Carica un file Excel della strategia asta di fantalab. I dati verranno associati al tuo
+                utente.</p>
+
+            <div style="margin-bottom: 10px;">
+                <label
+                    style="font-size: 11px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">Stagione:</label>
+                <select id="preasta_season_id"
+                    style="width: 100%; border: 1px solid var(--card-border); border-radius: 4px; background: var(--card-bg); color: var(--text-color);">
+                    <option value="18">2023/2024</option>
+                    <option value="19">2024/2025</option>
+                    <option value="20" selected>2025/2026</option>
+                    <option value="21">2026/2027</option>
+                    <option value="22">2027/2028</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label
+                    style="font-size: 11px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">File
+                    Excel:</label>
+                <input type="file" id="preasta_file" accept=".xlsx, .xls"
+                    style="width: 100%; font-size: 12px; color: var(--text-color); margin-top: 4px;">
+            </div>
+
+            <button onclick="startPreastaTask()" class="btn-action" style="background-color: #9c27b0;">
+                Upload & Importa
+            </button>
+        </div>
+
         <!-- Card 3 (Danger Zone) -->
         <div class="action-card" style="border-color: var(--delete-button-bg, #ba2121);">
             <div class="card-icon">🗑️</div>
-            <h2 class="card-title" style="color: var(--delete-button-bg, #ba2121);">3. Svuota Database</h2>
-            <p class="card-desc">Danger Zone: elimina in modo irreversibile tutti i Calciatori, le Squadre Reali e le Stagioni, inclusi Voti e Statistiche a cascata. Riporta il DB a zero.</p>
+            <h2 class="card-title" style="color: var(--delete-button-bg, #ba2121);">4. Svuota Database</h2>
+            <p class="card-desc">Danger Zone: elimina in modo irreversibile tutti i Calciatori, le Squadre Reali e le
+                Stagioni, inclusi Voti e Statistiche a cascata. Riporta il DB a zero.</p>
             <button onclick="deleteDatabase()" class="btn-action btn-danger">
                 Cancella Tutto
             </button>
@@ -264,18 +116,19 @@
                     <td><span class="status-badge status-{{ t.status }}">{{ t.get_status_display }}</span></td>
                     <td style="text-align: right;">
                         {% if t.status == 'COMPLETED' %}
-                            100%
+                        100%
                         {% elif t.total_items > 0 %}
-                            {{ t.processed_items }} / {{ t.total_items }}
+                        {{ t.processed_items }} / {{ t.total_items }}
                         {% else %}
-                            0 / 0
+                        0 / 0
                         {% endif %}
                     </td>
                     <td style="text-align: right; color: var(--text-muted);">{{ t.created_at|date:"d/m/Y H:i:s" }}</td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="5" style="text-align: center; padding: 30px; color: var(--text-muted);">Nessuna attività registrata. I task appariranno qui.</td>
+                    <td colspan="5" style="text-align: center; padding: 30px; color: var(--text-muted);">Nessuna
+                        attività registrata. I task appariranno qui.</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -283,98 +136,5 @@
     </div>
 </div>
 
-<script>
-let currentTaskId = null;
-let pollInterval = null;
-
-function startTask(actionName) {
-    if (pollInterval) {
-        alert("C'è già un task in esecuzione. Attendi il termine.");
-        return;
-    }
-    
-    document.getElementById('progress-container').style.display = 'block';
-    document.getElementById('progress-bar').style.width = '0%';
-    document.getElementById('progress-bar').style.backgroundColor = 'var(--default-button-bg, #417690)';
-    document.getElementById('progress-text').innerText = "Inizializzazione ambiente...";
-    
-    const formData = new FormData();
-    formData.append('action', actionName);
-    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-    
-    fetch('', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'ok') {
-            currentTaskId = data.task_id;
-            pollInterval = setInterval(checkStatus, 1500);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert("Errore di rete durante l'avvio.");
-    });
-}
-
-function checkStatus() {
-    if (!currentTaskId) return;
-    
-    fetch('/admin/import-dashboard/task/' + currentTaskId + '/')
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'NOT_FOUND') return;
-        
-        let percentage = 0;
-        if (data.total > 0) {
-            percentage = Math.round((data.processed / data.total) * 100);
-        } else if (data.status === 'COMPLETED') {
-            percentage = 100;
-        }
-        
-        document.getElementById('progress-bar').style.width = percentage + '%';
-        document.getElementById('progress-text').innerText = `Stato: ${data.status_display} - Completati ${data.processed} su ${data.total} (${percentage}%)`;
-        
-        if (data.status === 'COMPLETED' || data.status === 'ERROR') {
-            clearInterval(pollInterval);
-            pollInterval = null;
-            if (data.status === 'ERROR') {
-                document.getElementById('progress-text').innerText += " - ERRORE: " + data.error;
-                document.getElementById('progress-bar').style.backgroundColor = '#f44336';
-            } else {
-                document.getElementById('progress-bar').style.backgroundColor = '#4caf50';
-            }
-            setTimeout(() => location.reload(), 2500);
-        }
-    });
-}
-
-function deleteDatabase() {
-    if(confirm("ATTENZIONE! Sei sicuro di voler cancellare TUTTI i calciatori, le squadre e i voti dal database? Questa azione non può essere annullata.")) {
-        if(confirm("Sei veramente sicuro? (Ultimo avviso)")) {
-            const formData = new FormData();
-            formData.append('action', 'delete_all_data');
-            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-            
-            fetch('', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'deleted') {
-                    alert("Database svuotato con successo!");
-                    location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert("Errore durante la cancellazione.");
-            });
-        }
-    }
-}
-</script>
+<script src="{% static 'stats/js/dashboard.js' %}"></script>
 {% endblock %}

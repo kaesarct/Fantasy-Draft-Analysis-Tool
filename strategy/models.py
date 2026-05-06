@@ -7,7 +7,8 @@ class AnalisiPreAsta(models.Model):
     utente = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='strategie_asta')
     
     obiettivo = models.CharField('Obiett.', max_length=50, blank=True)
-    fascia = models.PositiveIntegerField('Fascia', null=True, blank=True)
+    # fascia: valore libero (es. 'Top', 'A', 'B', 'C', ...) come usato da Fantalab
+    fascia = models.CharField('Fascia', max_length=20, null=True, blank=True)
     prezzo_massimo = models.PositiveIntegerField('Prezzo', default=0)
     budget_percentuale = models.DecimalField('Budget %', max_digits=5, decimal_places=2, help_text="Su base budget 350", null=True, blank=True)
     pma = models.DecimalField('PMA', max_digits=6, decimal_places=2, null=True, blank=True, help_text="Prezzo Medio Altre Leghe")

@@ -147,3 +147,51 @@ CURRENT_SEASON_START_YEAR = _oggi.year if _oggi.month >= 8 else _oggi.year - 1
 
 # Sappiamo che il 2025/2026 corrisponde all'ID 20. Quindi 2025 - 2005 = 20
 CURRENT_SEASON_ID = CURRENT_SEASON_START_YEAR - 2005
+
+# ---------------------------------------------------------------------------
+# Logging: scrive su console e su file rotante fanta_debug.log
+# ---------------------------------------------------------------------------
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} [{name}] {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'fanta_debug.log'),
+            'maxBytes': 5 * 1024 * 1024,  # 5 MB per file
+            'backupCount': 3,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+    },
+    'loggers': {
+        # Logger applicativi specifici
+        'stats': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'strategy': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        # Django request errors
+        'django.request': {
+            'handlers': ['file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}

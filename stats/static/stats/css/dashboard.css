@@ -1,0 +1,184 @@
+    /* Integrazione con i colori di Django Light/Dark mode */
+    :root {
+        --card-bg: var(--body-bg, #fff);
+        --card-border: var(--hairline-color, #e0e0e0);
+        --text-color: var(--body-fg, #333);
+        --text-muted: var(--body-quiet-color, #666);
+    }
+    
+    .dashboard-container {
+        padding: 20px 0;
+        max-width: 1200px;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 300;
+        margin-bottom: 30px;
+        color: var(--text-color);
+        border-bottom: 1px solid var(--card-border);
+        padding-bottom: 10px;
+    }
+
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 25px;
+        margin-bottom: 40px;
+    }
+
+    .action-card {
+        background-color: var(--darkened-bg, var(--module-bg, #f8f8f8));
+        border: 1px solid var(--card-border);
+        border-radius: 8px;
+        padding: 25px;
+        transition: transform 0.2s, box-shadow 0.2s;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .action-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .card-icon {
+        font-size: 2.5rem;
+        margin-bottom: 15px;
+    }
+
+    .card-title {
+        font-size: 1.2rem;
+        font-weight: bold;
+        margin: 0 0 10px 0;
+        color: var(--text-color);
+    }
+
+    .card-desc {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        flex-grow: 1;
+        margin-bottom: 20px;
+    }
+
+    .btn-action {
+        background-color: var(--button-bg, #79aec8);
+        color: var(--button-fg, #fff);
+        border: none;
+        padding: 12px 20px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        transition: background-color 0.2s;
+        width: 100%;
+        text-align: center;
+    }
+
+    .btn-action:hover {
+        background-color: var(--button-hover-bg, #609ab6);
+        color: var(--button-fg, #fff);
+    }
+    
+    .btn-primary {
+        background-color: var(--default-button-bg, #417690);
+    }
+    .btn-primary:hover {
+        background-color: var(--default-button-hover-bg, #205067);
+    }
+
+    .progress-wrapper {
+        background-color: var(--darkened-bg, var(--module-bg, #f8f8f8));
+        border: 1px solid var(--card-border);
+        border-left: 5px solid var(--default-button-bg, #417690);
+        border-radius: 8px;
+        padding: 25px;
+        margin-bottom: 40px;
+        display: none;
+    }
+
+    .progress-track {
+        width: 100%;
+        background-color: var(--card-border);
+        height: 24px;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-top: 15px;
+        position: relative;
+    }
+
+    .progress-fill {
+        width: 0%;
+        height: 100%;
+        background-color: var(--default-button-bg, #417690);
+        transition: width 0.4s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Animazione a strisce per la barra di progresso */
+    .progress-fill::after {
+        content: "";
+        position: absolute;
+        top: 0; left: 0; bottom: 0; right: 0;
+        background-image: linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.15) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0.15) 75%,
+            transparent 75%,
+            transparent
+        );
+        background-size: 1rem 1rem;
+        animation: progress-stripes 1s linear infinite;
+    }
+
+    @keyframes progress-stripes {
+        from { background-position: 1rem 0; }
+        to { background-position: 0 0; }
+    }
+
+    .task-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    .task-table th {
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: var(--text-muted);
+        padding: 12px;
+        border-bottom: 2px solid var(--card-border);
+    }
+
+    .task-table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--card-border);
+        color: var(--text-color);
+    }
+    
+    .status-badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: bold;
+        display: inline-block;
+    }
+    .status-PENDING { background: #ffc107; color: #000; }
+    .status-RUNNING { background: #2196f3; color: #fff; }
+    .status-COMPLETED { background: #4caf50; color: #fff; }
+    .status-ERROR { background: #f44336; color: #fff; }
+
+    .btn-danger {
+        background-color: var(--delete-button-bg, #ba2121);
+    }
+    .btn-danger:hover {
+        background-color: var(--delete-button-hover-bg, #a41515);
+    }

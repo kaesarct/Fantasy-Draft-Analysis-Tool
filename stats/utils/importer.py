@@ -1,11 +1,15 @@
 import os
 import glob
+import time
+import logging
 import pandas as pd
 import numpy as np
 from django.conf import settings
 from core.models import ImportTask, SquadraReale, Stagione
 from players.models import Calciatore, CalciatoreStagione
 from stats.models import VotoPartita, StatisticaCalciatore
+
+log = logging.getLogger('stats.importer')
 
 DOWNLOAD_FOLDER = os.path.join(settings.BASE_DIR, "dati_scaricati")
 
@@ -24,13 +28,16 @@ class FantaImporter:
             self.task = ImportTask.objects.filter(id=task_id).first()
 
     def elabora_file_statistiche(self, file_path, season_id):
+        t0 = time.perf_counter()
         anno_inizio = 2005 + season_id
         nome_stagione = f"{anno_inizio}/{anno_inizio+1}"
+        log.debug("[STATS] Inizio elaborazione %s (stagione %s)", os.path.basename(file_path), nome_stagione)
         
         try:
             df = pd.read_excel(file_path, skiprows=1) 
             df = df.replace({np.nan: None})
-        except Exception:
+        except Exception as e:
+            log.error("[STATS] Errore lettura Excel %s: %s", file_path, e)
             return
             
         stagione_obj, _ = Stagione.objects.get_or_create(nome=nome_stagione)
@@ -86,9 +93,15 @@ class FantaImporter:
                 }
             )
 
+        elapsed = time.perf_counter() - t0
+        log.info("[STATS] Completata %s: %d righe in %.2fs", os.path.basename(file_path), len(df), elapsed)
+
     def import_all_stats(self):
+        t_total = time.perf_counter()
+        log.info("[STATS] Avvio import_all_stats")
         try:
             files = glob.glob(os.path.join(DOWNLOAD_FOLDER, "stats", "*.xlsx"))
+            log.info("[STATS] Trovati %d file statistiche", len(files))
             if self.task:
                 self.task.status = 'RUNNING'
                 self.task.total_items = len(files)
@@ -107,20 +120,25 @@ class FantaImporter:
             if self.task:
                 self.task.status = 'COMPLETED'
                 self.task.save()
+            log.info("[STATS] import_all_stats completato in %.2fs", time.perf_counter() - t_total)
         except Exception as e:
+            log.exception("[STATS] Errore in import_all_stats: %s", e)
             if self.task:
                 self.task.status = 'ERROR'
                 self.task.error_message = str(e)
                 self.task.save()
 
     def elabora_file_voti(self, file_path, season_id, giornata):
+        t0 = time.perf_counter()
         anno_inizio = 2005 + season_id
         nome_stagione = f"{anno_inizio}/{anno_inizio+1}"
+        log.debug("[VOTI] Inizio elaborazione %s (stagione %s, giornata %d)", os.path.basename(file_path), nome_stagione, giornata)
         
         try:
             df = pd.read_excel(file_path, header=None) 
             df = df.replace({np.nan: None})
-        except Exception:
+        except Exception as e:
+            log.error("[VOTI] Errore lettura Excel %s: %s", file_path, e)
             return
             
         stagione_obj, _ = Stagione.objects.get_or_create(nome=nome_stagione)
@@ -192,9 +210,15 @@ class FantaImporter:
                 }
             )
 
+        elapsed = time.perf_counter() - t0
+        log.debug("[VOTI] Completata giornata %d stagione %s in %.2fs", giornata, nome_stagione, elapsed)
+
     def import_all_voti(self):
+        t_total = time.perf_counter()
+        log.info("[VOTI] Avvio import_all_voti")
         try:
             files = glob.glob(os.path.join(DOWNLOAD_FOLDER, "voti", "*", "*.xlsx"))
+            log.info("[VOTI] Trovati %d file voti", len(files))
             if self.task:
                 self.task.status = 'RUNNING'
                 self.task.total_items = len(files)
@@ -215,7 +239,9 @@ class FantaImporter:
             if self.task:
                 self.task.status = 'COMPLETED'
                 self.task.save()
+            log.info("[VOTI] import_all_voti completato in %.2fs", time.perf_counter() - t_total)
         except Exception as e:
+            log.exception("[VOTI] Errore in import_all_voti: %s", e)
             if self.task:
                 self.task.status = 'ERROR'
                 self.task.error_message = str(e)

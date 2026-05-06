@@ -3,6 +3,6 @@ from .models import AnalisiPreAsta
 
 @admin.register(AnalisiPreAsta)
 class AnalisiPreAstaAdmin(admin.ModelAdmin):
-    list_display = ('calciatore_stagione', 'utente', 'obiettivo', 'fascia', 'prezzo_massimo')
-    list_filter = ('utente', 'fascia', 'obiettivo')
+    list_display = ('calciatore_stagione', 'utente', 'fascia', 'prezzo_massimo', 'budget_percentuale', 'pma')
+    list_filter = ('utente', 'fascia')
     search_fields = ('calciatore_stagione__calciatore__cognome',)
