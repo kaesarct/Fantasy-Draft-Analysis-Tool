@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Rosa {{ squadra.nome }} | FantaDash{% endblock %}
+{% block nav_leghe %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:20px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <a href="{% url 'lega_detail' lega.id %}" style="color:var(--text-muted); font-size:13px; text-decoration:none;">← {{ lega.nome }}</a>
+    <span style="color:var(--border);">/</span>
+    <span style="color:var(--text-muted); font-size:13px;">{{ squadra.nome }}</span>
+</div>
+
+<div class="section-header">
+    <div>
+        <div class="page-title">🏟️ Rosa — {{ squadra.nome }}</div>
+        <div class="page-subtitle">{{ squadra.stagione }} · Lega: {{ lega.nome }}</div>
+    </div>
+    <a href="{% url 'squadra_edit' lega.id squadra.id %}" class="btn btn-secondary">✏️ Modifica Squadra</a>
+</div>
+
+<!-- Stat riassuntive -->
+<div class="grid-4" style="margin-bottom:20px;">
+    <div class="stat-box">
+        <div class="val">{{ ingaggi|length }}</div>
+        <div class="lbl">Giocatori</div>
+    </div>
+    <div class="stat-box">
+        <div class="val" style="color:var(--yellow);">{{ totale_costo }}</div>
+        <div class="lbl">Crediti Spesi</div>
+    </div>
+    <div class="stat-box">
+        <div class="val" style="color:var(--green);">{{ squadra.crediti_residui }}</div>
+        <div class="lbl">Crediti Residui</div>
+    </div>
+    <div class="stat-box">
+        <div class="val" style="color:var(--accent);">{{ squadra.presidenti.count }}</div>
+        <div class="lbl">Presidenti</div>
+    </div>
+</div>
+
+<!-- Errori upload -->
+{% if errori_upload %}
+<div class="alert alert-warning">
+    ⚠️ Giocatori non trovati nel DB ({{ errori_upload|length }}):
+    {% for n in errori_upload %}<strong>{{ n }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="grid-2" style="align-items:start;">
+    <!-- Tabella rosa -->
+    <div class="card">
+        <div class="section-header" style="margin-bottom:12px;">
+            <span class="section-title">📋 Giocatori</span>
+        </div>
+        <div class="table-wrapper">
+        <table class="data-table">
+            <thead><tr>
+                <th>Ruolo</th>
+                <th>Calciatore</th>
+                <th>Squadra Reale</th>
+                <th class="num">Quo</th>
+                <th class="num">Fm</th>
+                <th class="num">Costo</th>
+                <th></th>
+            </tr></thead>
+            <tbody>
+            {% regroup ingaggi by calciatore_stagione.ruolo_stagione as ruolo_groups %}
+            {% for ruolo in ruolo_groups %}
+            <tr>
+                <td colspan="7" style="background:var(--bg3); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); padding:6px 12px;">
+                    <span class="badge badge-{{ ruolo.grouper }}">{{ ruolo.grouper }}</span>
+                    — {{ ruolo.list|length }} giocatori
+                </td>
+            </tr>
+            {% for ing in ruolo.list %}
+            {% with cs=ing.calciatore_stagione stat=ing.calciatore_stagione.statistiche_riassuntive %}
+            <tr>
+                <td><span class="badge badge-{{ cs.ruolo_stagione }}">{{ cs.ruolo_stagione }}</span></td>
+                <td>
+                    <a href="/analisi/giocatore/?q={{ cs.calciatore.cognome }}" style="color:var(--text); text-decoration:none; font-weight:500;">
+                        {{ cs.calciatore.cognome }}
+                    </a>
+                    <span style="color:var(--text-muted); font-size:12px;"> {{ cs.calciatore.nome }}</span>
+                </td>
+                <td style="color:var(--text-muted); font-size:13px;">{{ cs.squadra_reale }}</td>
+                <td class="num">{{ cs.quotazione_iniziale }}</td>
+                <td class="num" style="color:var(--green); font-weight:600;">
+                    {% if stat %}{{ stat.fanta_media }}{% else %}—{% endif %}
+                </td>
+                <td class="num" style="color:var(--yellow); font-weight:600;">{{ ing.costo_acquisto }}</td>
+                <td>
+                    <form method="post" action="{% url 'ingaggio_rimuovi' lega.id squadra.id ing.id %}" onsubmit="return confirm('Rimuovere {{ cs.calciatore.cognome }}?')">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger btn-sm">✕</button>
+                    </form>
+                </td>
+            </tr>
+            {% endwith %}
+            {% endfor %}
+            {% endfor %}
+            {% if not ingaggi %}
+            <tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-muted);">Rosa vuota. Carica un Excel!</td></tr>
+            {% endif %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <!-- Upload Excel + presidenti -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+        <!-- Upload -->
+        <div class="card" style="border-color:var(--accent);">
+            <div class="section-title" style="color:var(--accent); margin-bottom:16px;">📤 Upload Rosa da Excel</div>
+            <div style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">
+                Il file Excel deve avere le colonne: <code style="background:var(--bg3); padding:2px 6px; border-radius:4px;">Calciatore</code> (cognome) e <code style="background:var(--bg3); padding:2px 6px; border-radius:4px;">Costo</code>
+            </div>
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label class="form-label">Stagione di riferimento</label>
+                    {{ upload_form.stagione }}
+                </div>
+                <div class="form-group">
+                    <label class="form-label">File Excel</label>
+                    {{ upload_form.file }}
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%;">📤 Carica Rosa</button>
+            </form>
+        </div>
+
+        <!-- Presidenti -->
+        <div class="card">
+            <div class="section-title" style="margin-bottom:12px;">👑 Presidenti</div>
+            {% for p in squadra.presidenti.all %}
+            <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);">
+                <div style="width:32px; height:32px; border-radius:50%; background:var(--accent2); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#fff;">
+                    {{ p.username|slice:":1"|upper }}
+                </div>
+                <div>
+                    <div style="font-weight:500;">{{ p.username }}</div>
+                    <div style="font-size:12px; color:var(--text-muted);">{{ p.email|default:"—" }}</div>
+                </div>
+            </div>
+            {% empty %}
+            <div style="color:var(--text-muted); font-size:13px;">Nessun presidente assegnato</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

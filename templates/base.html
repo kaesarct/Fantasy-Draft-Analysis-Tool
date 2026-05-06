@@ -1,0 +1,273 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}FantaDashboard{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg2: #161b22;
+            --bg3: #21262d;
+            --border: #30363d;
+            --accent: #58a6ff;
+            --accent2: #388bfd;
+            --green: #3fb950;
+            --red: #f85149;
+            --yellow: #d29922;
+            --purple: #a371f7;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --radius: 8px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* NAV */
+        nav {
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 56px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .nav-brand {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--accent);
+            text-decoration: none;
+            margin-right: 16px;
+        }
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: var(--radius);
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.15s, color 0.15s;
+        }
+        .nav-link:hover, .nav-link.active { background: var(--bg3); color: var(--text); }
+        .nav-spacer { flex: 1; }
+        .nav-user {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* LAYOUT */
+        .page-container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+        .page-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+
+        /* CARDS */
+        .card {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+        .card + .card { margin-top: 16px; }
+
+        /* TABLES */
+        .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .data-table th {
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .data-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tr:hover td { background: var(--bg3); }
+        .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+        /* BADGES */
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-P { background: #1f3a5f; color: #58a6ff; }
+        .badge-D { background: #1f4228; color: #3fb950; }
+        .badge-C { background: #3d2f1a; color: #d29922; }
+        .badge-A { background: #3a1f1f; color: #f85149; }
+        .badge-top { background: #3d2f1a; color: #d29922; }
+        .badge-gray { background: var(--bg3); color: var(--text-muted); }
+
+        /* FORMS */
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .form-input, .form-select {
+            width: 100%;
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            padding: 9px 12px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.15s;
+        }
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .form-select option { background: var(--bg2); }
+
+        /* BUTTONS */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: var(--radius);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            text-decoration: none;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+        .btn-primary { background: var(--accent2); color: #fff; }
+        .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+        .btn-danger { background: var(--red); color: #fff; }
+        .btn-success { background: var(--green); color: #000; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+        /* ALERTS */
+        .alert {
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            font-size: 14px;
+            margin-bottom: 16px;
+            border-left: 4px solid;
+        }
+        .alert-success { background: #1a2e1e; border-color: var(--green); color: var(--green); }
+        .alert-warning { background: #2d2209; border-color: var(--yellow); color: var(--yellow); }
+        .alert-danger  { background: #2e1a1a; border-color: var(--red); color: var(--red); }
+        .alert-info    { background: #1a2340; border-color: var(--accent); color: var(--accent); }
+
+        /* SEARCH */
+        .search-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .search-bar .form-input { max-width: 400px; }
+
+        /* GRID */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+        /* STAT BOX */
+        .stat-box {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-box .val { font-size: 28px; font-weight: 700; color: var(--accent); }
+        .stat-box .lbl { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        /* SECTION HEADER */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .section-title { font-size: 16px; font-weight: 600; }
+
+        /* SCROLLABLE TABLE */
+        .table-wrapper { overflow-x: auto; }
+
+        /* MESSAGES */
+        .messages-container { margin-bottom: 20px; }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+            .search-bar { flex-direction: column; }
+            nav { gap: 4px; }
+        }
+    </style>
+    {% block extra_style %}{% endblock %}
+</head>
+<body>
+<nav>
+    <a class="nav-brand" href="/">⚽ FantaDash</a>
+    <a class="nav-link {% block nav_analisi %}{% endblock %}" href="/analisi/giocatore/">🔍 Giocatori</a>
+    <a class="nav-link {% block nav_classifica %}{% endblock %}" href="/analisi/classifica/">📊 Classifica</a>
+    <a class="nav-link {% block nav_confronto %}{% endblock %}" href="/analisi/confronto/">⚡ Confronto</a>
+    <a class="nav-link {% block nav_leghe %}{% endblock %}" href="/leghe/">🏆 Leghe</a>
+    <span class="nav-spacer"></span>
+    {% if user.is_authenticated %}
+    <span class="nav-user">{{ user.username }}</span>
+    <a class="nav-link" href="/admin/">Admin</a>
+    <a class="nav-link" href="/logout/">Esci</a>
+    {% else %}
+    <a class="nav-link btn-primary" href="/login/">Login</a>
+    {% endif %}
+</nav>
+
+<div class="page-container">
+    {% if messages %}
+    <div class="messages-container">
+        {% for msg in messages %}
+        <div class="alert alert-{% if msg.tags == 'error' %}danger{% elif msg.tags == 'warning' %}warning{% elif msg.tags == 'success' %}success{% else %}info{% endif %}">
+            {{ msg }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+</div>
+
+{% block extra_script %}{% endblock %}
+</body>
+</html>

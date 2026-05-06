@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Leghe | FantaDash{% endblock %}
+{% block nav_leghe %}active{% endblock %}
+
+{% block content %}
+<div class="section-header">
+    <div>
+        <div class="page-title">🏆 Le mie Leghe</div>
+        <div class="page-subtitle">Gestisci le tue fantacompetizioni private</div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <!-- Lista leghe -->
+    <div>
+        {% for lega in leghe %}
+        <div class="card" style="margin-bottom:12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div>
+                    <div style="font-size:17px; font-weight:600;">🏆 {{ lega.nome }}</div>
+                    <div style="color:var(--text-muted); font-size:13px; margin-top:4px;">
+                        {{ lega.squadre.count }} squadr{% if lega.squadre.count == 1 %}a{% else %}e{% endif %}
+                    </div>
+                </div>
+                <a href="{% url 'lega_detail' lega.id %}" class="btn btn-primary">Apri →</a>
+            </div>
+        </div>
+        {% empty %}
+        <div class="card" style="text-align:center; padding:40px;">
+            <div style="font-size:40px; margin-bottom:12px;">🏆</div>
+            <div style="color:var(--text-muted);">Nessuna lega ancora. Crea la prima!</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Form crea lega -->
+    <div class="card" style="align-self:start; border-color:var(--accent);">
+        <div class="section-title" style="margin-bottom:16px; color:var(--accent);">+ Crea Nuova Lega</div>
+        <form method="post">
+            {% csrf_token %}
+            <div class="form-group">
+                <label class="form-label">Nome della Lega</label>
+                {{ form.nome }}
+                {% if form.nome.errors %}
+                <div style="color:var(--red); font-size:12px; margin-top:4px;">{{ form.nome.errors }}</div>
+                {% endif %}
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;">Crea Lega</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

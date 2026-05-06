@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Home | FantaDash{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 32px;">
+    <div class="page-title">👋 Benvenuto, {{ user.username }}</div>
+    <div class="page-subtitle">Scegli un'area da esplorare</div>
+</div>
+
+<!-- ANALISI -->
+<div style="margin-bottom: 10px;">
+    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">📊 Analisi Dati</div>
+    <div class="grid-3">
+
+        <a href="/analisi/giocatore/" style="text-decoration:none;">
+            <div class="card" style="border-color: var(--accent); cursor:pointer; transition: transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(88,166,255,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div style="font-size: 36px; margin-bottom: 10px;">🔍</div>
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--accent);">Scheda Giocatore</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Cerca un calciatore e visualizza il suo storico statistiche, i voti per giornata e la tua analisi pre-asta</div>
+            </div>
+        </a>
+
+        <a href="/analisi/classifica/" style="text-decoration:none;">
+            <div class="card" style="border-color: var(--green); cursor:pointer; transition: transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(63,185,80,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div style="font-size: 36px; margin-bottom: 10px;">📊</div>
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--green);">Classifica</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Top 100 calciatori per stagione e ruolo, ordinabili per Fanta Media, Gol, Assist e altro</div>
+            </div>
+        </a>
+
+        <a href="/analisi/confronto/" style="text-decoration:none;">
+            <div class="card" style="border-color: var(--yellow); cursor:pointer; transition: transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(210,153,34,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div style="font-size: 36px; margin-bottom: 10px;">⚡</div>
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--yellow);">Confronto</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Metti a confronto il rendimento storico di due calciatori stagione per stagione</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- FANTACOMPETIZIONI -->
+<div style="margin-bottom: 10px; margin-top: 28px;">
+    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">🏆 Fantacompetizioni</div>
+    <div class="grid-3">
+
+        <a href="/leghe/" style="text-decoration:none;">
+            <div class="card" style="border-color: var(--purple); cursor:pointer; transition: transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(163,113,247,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div style="font-size: 36px; margin-bottom: 10px;">🏆</div>
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--purple);">Le mie Leghe</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Gestisci le fantacompetizioni, crea squadre, assegna presidenti e carica le rose</div>
+            </div>
+        </a>
+
+        {% if user.is_staff %}
+        <a href="/admin/import-dashboard/" style="text-decoration:none;">
+            <div class="card" style="border-color: #e05a0c; cursor:pointer; transition: transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(224,90,12,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div style="font-size: 36px; margin-bottom: 10px;">⚙️</div>
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px; color: #e05a0c;">Dashboard Import</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Scarica statistiche e voti da Fantacalcio, importa i dati nel DB, carica strategie pre-asta</div>
+            </div>
+        </a>
+
+        <a href="/admin/" style="text-decoration:none;">
+            <div class="card" style="border-color: var(--red); cursor:pointer; transition: transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(248,81,73,.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                <div style="font-size: 36px; margin-bottom: 10px;">🛡️</div>
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--red);">Admin Django</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Accesso diretto al pannello di amministrazione per la gestione avanzata dei dati</div>
+            </div>
+        </a>
+        {% endif %}
+
+    </div>
+</div>
+
+<!-- Quick stats -->
+<div style="margin-top: 32px;">
+    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">📈 Database</div>
+    <div class="grid-4">
+        <div class="stat-box">
+            <div class="val">{{ n_calciatori }}</div>
+            <div class="lbl">Calciatori</div>
+        </div>
+        <div class="stat-box">
+            <div class="val">{{ n_stagioni }}</div>
+            <div class="lbl">Stagioni</div>
+        </div>
+        <div class="stat-box">
+            <div class="val">{{ n_voti }}</div>
+            <div class="lbl">Voti</div>
+        </div>
+        <div class="stat-box">
+            <div class="val" style="color: var(--purple);">{{ n_preasta }}</div>
+            <div class="lbl">Analisi Pre-Asta</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

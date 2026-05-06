@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Scheda Giocatore | FantaDash{% endblock %}
+{% block nav_analisi %}active{% endblock %}
+
+{% block content %}
+<div class="page-title">🔍 Scheda Giocatore</div>
+<div class="page-subtitle">Cerca un calciatore per visualizzare il suo storico e la tua analisi pre-asta</div>
+
+<!-- Search -->
+<form method="get" class="search-bar">
+    <input class="form-input" name="q" value="{{ query }}" placeholder="Cognome o nome (es. Lautaro)" autocomplete="off">
+    <select class="form-select" name="stagione" style="max-width:180px;">
+        <option value="">Ultima stagione</option>
+        {% for s in stagioni %}
+        <option value="{{ s.id }}" {% if s.id == stagione_id %}selected{% endif %}>{{ s.nome }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">Cerca</button>
+</form>
+
+{% if query and not calciatore %}
+<div class="alert alert-warning">⚠️ Nessun giocatore trovato per "{{ query }}"</div>
+{% endif %}
+
+{% if calciatore %}
+<!-- Header -->
+<div class="card" style="margin-bottom:16px; display:flex; align-items:center; gap:20px;">
+    <div style="font-size:48px;">
+        {% if calciatore.ruolo_base == 'P' %}🧤{% elif calciatore.ruolo_base == 'D' %}🛡️{% elif calciatore.ruolo_base == 'C' %}⚙️{% else %}⚡{% endif %}
+    </div>
+    <div>
+        <div style="font-size:22px; font-weight:700;">{{ calciatore.cognome }} {{ calciatore.nome }}</div>
+        <div style="color:var(--text-muted); font-size:14px; margin-top:4px;">
+            <span class="badge badge-{{ calciatore.ruolo_base }}">{{ calciatore.get_ruolo_base_display }}</span>
+        </div>
+    </div>
+    {% if preasta %}
+    <div style="margin-left:auto; text-align:right;">
+        <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">La tua valutazione</div>
+        <div style="font-size:20px; font-weight:700; color:var(--purple);">{{ preasta.fascia|default:"—" }}</div>
+        <div style="font-size:13px; color:var(--text-muted);">Max: <strong style="color:var(--text);">{{ preasta.prezzo_massimo }} cr</strong> · PMA: <strong style="color:var(--text);">{{ preasta.pma|default:"—" }}</strong></div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Pre-Asta box -->
+{% if preasta %}
+<div class="card" style="margin-bottom:16px; border-color:var(--purple);">
+    <div class="section-header">
+        <span class="section-title" style="color:var(--purple);">📈 La tua Analisi Pre-Asta</span>
+    </div>
+    <div class="grid-4" style="margin-bottom:12px;">
+        <div class="stat-box"><div class="val" style="color:var(--purple);">{{ preasta.fascia|default:"—" }}</div><div class="lbl">Fascia</div></div>
+        <div class="stat-box"><div class="val">{{ preasta.prezzo_massimo }}</div><div class="lbl">Prezzo Max</div></div>
+        <div class="stat-box"><div class="val">{{ preasta.budget_percentuale|default:"—" }}{% if preasta.budget_percentuale %}%{% endif %}</div><div class="lbl">Budget %</div></div>
+        <div class="stat-box"><div class="val" style="color:var(--yellow);">{{ preasta.pma|default:"—" }}</div><div class="lbl">PMA</div></div>
+    </div>
+    {% if preasta.commento %}
+    <div style="font-size:13px; color:var(--text-muted); margin-top:8px;"><strong style="color:var(--text);">Note:</strong> {{ preasta.commento }}</div>
+    {% endif %}
+    {% if preasta.nota_1 %}<div style="font-size:12px; color:var(--text-muted);">• {{ preasta.nota_1 }}</div>{% endif %}
+    {% if preasta.nota_2 %}<div style="font-size:12px; color:var(--text-muted);">• {{ preasta.nota_2 }}</div>{% endif %}
+</div>
+{% endif %}
+
+<!-- Storico annuale -->
+<div class="card" style="margin-bottom:16px;">
+    <div class="section-title" style="margin-bottom:14px;">📅 Storico Stagionale</div>
+    <div class="table-wrapper">
+    <table class="data-table">
+        <thead><tr>
+            <th>Stagione</th><th>Squadra</th><th>Ruolo</th><th>Quo</th>
+            <th class="num">Pv</th><th class="num">Mv</th><th class="num">Fm</th>
+            <th class="num">Gol</th><th class="num">Ass</th><th class="num">Amm</th><th class="num">Esp</th>
+        </tr></thead>
+        <tbody>
+        {% for row in storico %}
+        <tr>
+            <td>{{ row.stagione }}</td>
+            <td style="color:var(--text-muted);">{{ row.squadra }}</td>
+            <td><span class="badge badge-{{ row.ruolo|slice:':1' }}">{{ row.ruolo }}</span></td>
+            <td>{{ row.quotazione }}</td>
+            <td class="num">{{ row.pv }}</td>
+            <td class="num" style="color:var(--accent);">{{ row.mv }}</td>
+            <td class="num" style="color:var(--green); font-weight:600;">{{ row.fm }}</td>
+            <td class="num">{{ row.gf }}</td>
+            <td class="num">{{ row.ass }}</td>
+            <td class="num">{% if row.amm %}<span style="color:var(--yellow);">{{ row.amm }}</span>{% else %}—{% endif %}</td>
+            <td class="num">{% if row.esp %}<span style="color:var(--red);">{{ row.esp }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="11" style="text-align:center; color:var(--text-muted); padding:24px;">Nessuna statistica storica disponibile</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<!-- Voti giornata per giornata -->
+{% if voti_stagione %}
+<div class="card">
+    <div class="section-title" style="margin-bottom:14px;">⚽ Voti per Giornata</div>
+    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+    {% for v in voti_stagione %}
+    <div style="
+        background:var(--bg3);
+        border:1px solid var(--border);
+        border-radius:6px;
+        padding:8px 12px;
+        text-align:center;
+        min-width:64px;
+        {% if v.fanta_voto >= 8 %}border-color:var(--green);{% elif v.fanta_voto >= 6 %}border-color:var(--accent);{% elif v.fanta_voto <= 4 %}border-color:var(--red);{% endif %}
+    ">
+        <div style="font-size:10px; color:var(--text-muted);">G{{ v.giornata }}</div>
+        <div style="font-size:16px; font-weight:700;
+            {% if v.fanta_voto >= 8 %}color:var(--green);{% elif v.fanta_voto >= 6 %}color:var(--accent);{% elif v.fanta_voto <= 4 %}color:var(--red);{% endif %}
+        ">{{ v.fanta_voto }}</div>
+        <div style="font-size:10px; color:var(--text-muted);">({{ v.voto_base }})</div>
+    </div>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% endif %} {# end if calciatore #}
+{% endblock %}

@@ -1,0 +1,44 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Login | FantaDash</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg:#0d1117; --bg2:#161b22; --border:#30363d; --accent:#58a6ff; --accent2:#388bfd; --text:#e6edf3; --text-muted:#8b949e; }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); display:flex; align-items:center; justify-content:center; min-height:100vh; }
+        .login-box { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:40px; width:100%; max-width:380px; }
+        .login-title { font-size:22px; font-weight:600; text-align:center; margin-bottom:6px; }
+        .login-sub { color:var(--text-muted); font-size:13px; text-align:center; margin-bottom:28px; }
+        .form-label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:5px; }
+        .form-input { width:100%; background:#21262d; border:1px solid var(--border); border-radius:6px; color:var(--text); padding:9px 12px; font-size:14px; font-family:inherit; margin-bottom:16px; transition:border-color .15s; }
+        .form-input:focus { outline:none; border-color:var(--accent); }
+        .btn-login { width:100%; background:var(--accent2); color:#fff; border:none; padding:10px; border-radius:6px; font-size:15px; font-weight:600; cursor:pointer; transition:opacity .15s; }
+        .btn-login:hover { opacity:.85; }
+        .error { color:#f85149; font-size:13px; margin-bottom:12px; padding:10px; background:#2e1a1a; border-radius:6px; border-left:3px solid #f85149; }
+    </style>
+</head>
+<body>
+<div class="login-box">
+    <div style="text-align:center; font-size:36px; margin-bottom:12px;">⚽</div>
+    <div class="login-title">FantaDash</div>
+    <div class="login-sub">Accedi al tuo account</div>
+
+    {% if form.errors %}
+    <div class="error">❌ Username o password non validi. Riprova.</div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        <label class="form-label">Username</label>
+        <input class="form-input" type="text" name="username" autofocus>
+        <label class="form-label">Password</label>
+        <input class="form-input" type="password" name="password">
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="btn-login">Entra →</button>
+    </form>
+</div>
+</body>
+</html>

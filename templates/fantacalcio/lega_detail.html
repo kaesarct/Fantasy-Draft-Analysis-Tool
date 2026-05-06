@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ lega.nome }} | FantaDash{% endblock %}
+{% block nav_leghe %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:20px;">
+    <a href="{% url 'lega_list' %}" style="color:var(--text-muted); font-size:13px; text-decoration:none;">← Leghe</a>
+</div>
+
+<div class="section-header">
+    <div>
+        <div class="page-title">🏆 {{ lega.nome }}</div>
+        <div class="page-subtitle">Gestisci le squadre e le rose per stagione</div>
+    </div>
+    <a href="{% url 'squadra_crea' lega.id %}" class="btn btn-primary">+ Aggiungi Squadra</a>
+</div>
+
+<!-- Filtro stagione -->
+<form method="get" style="display:flex; gap:10px; align-items:flex-end; margin-bottom:24px;">
+    <div>
+        <label class="form-label">Stagione</label>
+        <select class="form-select" name="stagione" onchange="this.form.submit()" style="min-width:160px;">
+            {% for s in stagioni %}
+            <option value="{{ s.id }}" {% if stagione_sel and s.id == stagione_sel.id %}selected{% endif %}>{{ s.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</form>
+
+{% if squadre %}
+<div class="grid-2">
+{% for squadra in squadre %}
+<div class="card" style="border-color:var(--border);">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;">
+        <div>
+            <div style="font-size:18px; font-weight:700;">{{ squadra.nome }}</div>
+            <div style="color:var(--text-muted); font-size:13px; margin-top:4px;">
+                Crediti residui: <strong style="color:var(--yellow);">{{ squadra.crediti_residui }}</strong>
+            </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+            <a href="{% url 'squadra_edit' lega.id squadra.id %}" class="btn btn-secondary btn-sm">✏️ Modifica</a>
+            <a href="{% url 'rosa_view' lega.id squadra.id %}" class="btn btn-primary btn-sm">🏟️ Rosa</a>
+        </div>
+    </div>
+
+    <!-- Presidenti -->
+    <div style="margin-bottom:10px;">
+        <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Presidenti</div>
+        {% for p in squadra.presidenti.all %}
+        <span style="display:inline-block; background:var(--bg3); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:12px; margin-right:4px;">{{ p.username }}</span>
+        {% empty %}
+        <span style="color:var(--text-muted); font-size:12px;">Nessun presidente</span>
+        {% endfor %}
+    </div>
+
+    <!-- Mini rosa preview -->
+    {% with rosa=squadra.rosa.all %}
+    {% if rosa %}
+    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Rosa ({{ rosa.count }} giocatori)</div>
+    <div style="display:flex; flex-wrap:wrap; gap:4px;">
+    {% for ing in rosa|slice:":8" %}
+    <span style="background:var(--bg3); border-radius:4px; padding:2px 6px; font-size:11px;">{{ ing.calciatore_stagione.calciatore.cognome }}</span>
+    {% endfor %}
+    {% if rosa.count > 8 %}<span style="color:var(--text-muted); font-size:11px;">+{{ rosa.count|add:"-8" }} altri</span>{% endif %}
+    </div>
+    {% endif %}
+    {% endwith %}
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="card" style="text-align:center; padding:48px;">
+    <div style="font-size:48px; margin-bottom:12px;">⚽</div>
+    <div style="color:var(--text-muted); margin-bottom:16px;">Nessuna squadra per questa stagione</div>
+    <a href="{% url 'squadra_crea' lega.id %}" class="btn btn-primary">+ Crea prima squadra</a>
+</div>
+{% endif %}
+{% endblock %}

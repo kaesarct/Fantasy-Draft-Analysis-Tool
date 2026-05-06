@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ titolo }} | FantaDash{% endblock %}
+{% block nav_leghe %}active{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:20px;">
+    <a href="{% url 'lega_detail' lega.id %}" style="color:var(--text-muted); font-size:13px; text-decoration:none;">← {{ lega.nome }}</a>
+</div>
+
+<div class="page-title">{{ titolo }}</div>
+<div class="page-subtitle">Lega: {{ lega.nome }}</div>
+
+<div style="max-width:540px; margin-top:24px;">
+    <div class="card" style="border-color:var(--accent);">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label class="form-label">Nome Squadra</label>
+                {{ form.nome }}
+                {% if form.nome.errors %}<div style="color:var(--red); font-size:12px; margin-top:4px;">{{ form.nome.errors }}</div>{% endif %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Stagione</label>
+                {{ form.stagione }}
+                {% if form.stagione.errors %}<div style="color:var(--red); font-size:12px; margin-top:4px;">{{ form.stagione.errors }}</div>{% endif %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Presidenti</label>
+                <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">Tieni premuto Ctrl (o Cmd) per selezionarne più di uno</div>
+                {{ form.presidenti }}
+                {% if form.presidenti.errors %}<div style="color:var(--red); font-size:12px; margin-top:4px;">{{ form.presidenti.errors }}</div>{% endif %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Crediti Residui</label>
+                {{ form.crediti_residui }}
+                {% if form.crediti_residui.errors %}<div style="color:var(--red); font-size:12px; margin-top:4px;">{{ form.crediti_residui.errors }}</div>{% endif %}
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:8px;">
+                <button type="submit" class="btn btn-primary" style="flex:1;">💾 Salva</button>
+                <a href="{% url 'lega_detail' lega.id %}" class="btn btn-secondary">Annulla</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
