@@ -146,3 +146,29 @@ function deleteDatabase() {
         }
     }
 }
+
+function clearPreasta() {
+    if(confirm("Sei sicuro di voler svuotare i dati della tua analisi Pre-Asta?")) {
+        const formData = new FormData();
+        formData.append('action', 'clear_preasta');
+        formData.append('csrfmiddlewaretoken', getCsrfToken());
+        
+        fetch('', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'deleted') {
+                alert(data.message || "Pre-asta svuotata con successo!");
+                location.reload();
+            } else {
+                alert("Errore: " + (data.message || "Sconosciuto"));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert("Errore di rete durante lo svuotamento.");
+        });
+    }
+}

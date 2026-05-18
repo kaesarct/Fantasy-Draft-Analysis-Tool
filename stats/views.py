@@ -106,6 +106,12 @@ def dashboard_view(request):
             threading.Thread(target=run_import_preasta, args=(task.id, file_path, request.user.username, season_id)).start()
             
             return JsonResponse({'status': 'ok', 'task_id': task.id})
+        elif action == 'clear_preasta':
+            log.warning("[VIEW] Action 'clear_preasta' eseguita da %s", request.user)
+            from strategy.models import AnalisiPreAsta
+            count, _ = AnalisiPreAsta.objects.filter(utente=request.user).delete()
+            log.warning("[VIEW] %d record di AnalisiPreAsta eliminati da %s", count, request.user)
+            return JsonResponse({'status': 'deleted', 'message': f'Eliminati {count} record pre-asta.'})
         elif action == 'delete_all_data':
             log.warning("[VIEW] Action 'delete_all_data' eseguita da %s", request.user)
             from players.models import Calciatore

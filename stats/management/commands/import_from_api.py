@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import re
 import pandas as pd
@@ -126,22 +127,49 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Errore lettura Excel: {e}"))
             return
-            
-        stagione_attiva, _ = Stagione.objects.get_or_create(attiva=True, defaults={'nome': '2024/2025'})
+        
+
+
+        stagione_attiva = Stagione.objects.filter(attiva=True).first()
+        if not stagione_attiva:
+            #prendi la stagione in corso
+            today = datetime.now()
+            if today.month >= 8:
+                # Se siamo da agosto in poi, la stagione è quella corrente (es. 2025/2026)
+                start_year = today.year
+            else:
+                # Se siamo prima di agosto, la stagione è quella precedente (es. 2024/2025)
+                start_year = today.year - 1
+            end_year = start_year + 1
+            nome_stagione_attiva = f"{start_year}/{end_year}"
+            stagione_attiva, _ = Stagione.objects.get_or_create(nome=nome_stagione_attiva)
+            stagione_attiva.attiva = True
+            stagione_attiva.save()
         
         inseriti = 0
         for index, row in df.iterrows():
             nome_giocatore = str(row.get('Nome', '')).strip()
             if not nome_giocatore:
                 continue
-                
-            parti = nome_giocatore.rsplit(' ', 1)
-            cognome_excel = parti[0].strip()
-            nome_excel = parti[1].strip() if len(parti) > 1 else ""
             
-            calciatore = Calciatore.objects.filter(cognome__iexact=cognome_excel).first()
-            if not calciatore:
+            fanta_id = row.get('Cod.') if 'Cod.' in row else row.get('Id')
+            if pd.isna(fanta_id):
                 continue
+            fanta_id = int(fanta_id)
+                
+            calciatore = Calciatore.objects.filter(fanta_id=fanta_id).first()
+            if not calciatore:
+                calciatore = Calciatore.objects.filter(nome__iexact=nome_giocatore).first()
+                if not calciatore:
+                    possibili = list(Calciatore.objects.filter(nome__icontains=nome_giocatore))
+                    if len(possibili) == 1:
+                        calciatore = possibili[0]
+                
+                if calciatore:
+                    calciatore.fanta_id = fanta_id
+                    calciatore.save()
+                else:
+                    continue
             
             try:
                 cs = CalciatoreStagione.objects.get(calciatore=calciatore, stagione=stagione_attiva)
@@ -220,22 +248,35 @@ class Command(BaseCommand):
                     defaults={'sigla': team_nome[:3].upper()}
                 )
 
-            # Trova o Crea Calciatore (Correzione Split)
-            parti = nome_giocatore.rsplit(' ', 1)
-            cognome_excel = parti[0].strip()
-            nome_excel = parti[1].strip() if len(parti) > 1 else ""
-
-            calciatore = Calciatore.objects.filter(cognome__iexact=cognome_excel).first()
+            # Trova o Crea Calciatore basato su ID
+            fanta_id = row.get('Cod.') if 'Cod.' in row else row.get('Id')
+            if pd.isna(fanta_id):
+                continue
+            fanta_id = int(fanta_id)
+            
+            calciatore = Calciatore.objects.filter(fanta_id=fanta_id).first()
             if not calciatore:
-                calciatore, _ = Calciatore.objects.get_or_create(
-                    cognome=cognome_excel,
-                    nome=nome_excel,
-                    defaults={'ruolo_base': str(row.get('Ruolo', 'C'))}
-                )
+                calciatore = Calciatore.objects.filter(nome__iexact=nome_giocatore).first()
+                if not calciatore:
+                    possibili = list(Calciatore.objects.filter(nome__icontains=nome_giocatore))
+                    if len(possibili) == 1:
+                        calciatore = possibili[0]
+                
+                if calciatore:
+                    calciatore.fanta_id = fanta_id
+                    calciatore.save()
+                else:
+                    calciatore, _ = Calciatore.objects.get_or_create(
+                        fanta_id=fanta_id,
+                        defaults={
+                            'nome': nome_giocatore,
+                            'ruolo_base': str(row.get('R', row.get('Ruolo', 'C')))
+                        }
+                    )
 
             # Trova o Crea CalciatoreStagione
             cs_defaults = {
-                'ruolo_stagione': str(row.get('Ruolo', 'C')),
+                'ruolo_stagione': str(row.get('R', row.get('Ruolo', 'C'))),
                 'quotazione_iniziale': row.get('Qt.I') or 1  # Qt.A/Qt.I a seconda dell'excel
             }
             if squadra:

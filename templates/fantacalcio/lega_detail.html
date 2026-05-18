@@ -60,7 +60,7 @@
     <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Rosa ({{ rosa.count }} giocatori)</div>
     <div style="display:flex; flex-wrap:wrap; gap:4px;">
     {% for ing in rosa|slice:":8" %}
-    <span style="background:var(--bg3); border-radius:4px; padding:2px 6px; font-size:11px;">{{ ing.calciatore_stagione.calciatore.cognome }}</span>
+    <span style="background:var(--bg3); border-radius:4px; padding:2px 6px; font-size:11px;">{{ ing.calciatore_stagione.calciatore.nome }}</span>
     {% endfor %}
     {% if rosa.count > 8 %}<span style="color:var(--text-muted); font-size:11px;">+{{ rosa.count|add:"-8" }} altri</span>{% endif %}
     </div>

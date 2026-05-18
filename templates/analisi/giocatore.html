@@ -29,7 +29,7 @@
         {% if calciatore.ruolo_base == 'P' %}🧤{% elif calciatore.ruolo_base == 'D' %}🛡️{% elif calciatore.ruolo_base == 'C' %}⚙️{% else %}⚡{% endif %}
     </div>
     <div>
-        <div style="font-size:22px; font-weight:700;">{{ calciatore.cognome }} {{ calciatore.nome }}</div>
+        <div style="font-size:22px; font-weight:700;">{{ calciatore.nome }}</div>
         <div style="color:var(--text-muted); font-size:14px; margin-top:4px;">
             <span class="badge badge-{{ calciatore.ruolo_base }}">{{ calciatore.get_ruolo_base_display }}</span>
         </div>

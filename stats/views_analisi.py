@@ -44,7 +44,7 @@ def giocatore_view(request):
     if query:
         calciatore = (
             Calciatore.objects.filter(
-                Q(cognome__icontains=query) | Q(nome__icontains=query)
+                nome__icontains=query
             ).first()
         )
 
@@ -167,7 +167,7 @@ def confronto_view(request):
         if not query:
             return None, []
         c = Calciatore.objects.filter(
-            Q(cognome__icontains=query) | Q(nome__icontains=query)
+            nome__icontains=query
         ).first()
         if not c:
             return None, []

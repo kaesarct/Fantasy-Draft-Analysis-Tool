@@ -55,18 +55,32 @@ class FantaImporter:
                     defaults={'sigla': team_nome[:3].upper()}
                 )
 
-            parti = nome_giocatore.rsplit(' ', 1)
-            cognome_excel = parti[0].strip()
-            nome_excel = parti[1].strip() if len(parti) > 1 else ""
+            fanta_id = row.get('Cod.') if 'Cod.' in row else row.get('Id')
+            if pd.isna(fanta_id):
+                continue
+            fanta_id = int(fanta_id)
 
-            calciatore = Calciatore.objects.filter(cognome__iexact=cognome_excel).first()
+            calciatore = Calciatore.objects.filter(fanta_id=fanta_id).first()
             if not calciatore:
-                calciatore, _ = Calciatore.objects.get_or_create(
-                    cognome=cognome_excel, nome=nome_excel,
-                    defaults={'ruolo_base': str(row.get('Ruolo', 'C'))}
-                )
+                calciatore = Calciatore.objects.filter(nome__iexact=nome_giocatore).first()
+                if not calciatore:
+                    possibili = list(Calciatore.objects.filter(nome__icontains=nome_giocatore))
+                    if len(possibili) == 1:
+                        calciatore = possibili[0]
+                
+                if calciatore:
+                    calciatore.fanta_id = fanta_id
+                    calciatore.save()
+                else:
+                    calciatore, _ = Calciatore.objects.get_or_create(
+                        fanta_id=fanta_id,
+                        defaults={
+                            'nome': nome_giocatore,
+                            'ruolo_base': str(row.get('R', row.get('Ruolo', 'C')))
+                        }
+                    )
 
-            cs_defaults = {'ruolo_stagione': str(row.get('Ruolo', 'C')), 'quotazione_iniziale': row.get('Qt.I') or 1}
+            cs_defaults = {'ruolo_stagione': str(row.get('R', row.get('Ruolo', 'C'))), 'quotazione_iniziale': row.get('Qt.I') or 1}
             if squadra:
                 cs_defaults['squadra_reale'] = squadra
                 
@@ -159,12 +173,27 @@ class FantaImporter:
             if not nome_giocatore:
                 continue
                 
-            parti = nome_giocatore.rsplit(' ', 1)
-            cognome_excel = parti[0].strip()
-            
-            calciatore = Calciatore.objects.filter(cognome__iexact=cognome_excel).first()
-            if not calciatore:
+            fanta_id = row[0]
+            if pd.isna(fanta_id):
                 continue
+            try:
+                fanta_id = int(fanta_id)
+            except ValueError:
+                continue
+
+            calciatore = Calciatore.objects.filter(fanta_id=fanta_id).first()
+            if not calciatore:
+                calciatore = Calciatore.objects.filter(nome__iexact=nome_giocatore).first()
+                if not calciatore:
+                    possibili = list(Calciatore.objects.filter(nome__icontains=nome_giocatore))
+                    if len(possibili) == 1:
+                        calciatore = possibili[0]
+                
+                if calciatore:
+                    calciatore.fanta_id = fanta_id
+                    calciatore.save()
+                else:
+                    continue
             
             try:
                 cs = CalciatoreStagione.objects.get(calciatore=calciatore, stagione=stagione_obj)

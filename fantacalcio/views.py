@@ -134,7 +134,7 @@ def rosa_view(request, lega_id, squadra_id):
         'calciatore_stagione__calciatore',
         'calciatore_stagione__squadra_reale',
         'calciatore_stagione__statistiche_riassuntive',
-    ).order_by('calciatore_stagione__ruolo_stagione', 'calciatore_stagione__calciatore__cognome')
+    ).order_by('calciatore_stagione__ruolo_stagione', 'calciatore_stagione__calciatore__nome')
 
     upload_form = RosaUploadForm()
     errori_upload = []
@@ -158,9 +158,9 @@ def rosa_view(request, lega_id, squadra_id):
                     if not cognome_raw:
                         continue
 
-                    # Cerca CalciatoreStagione per cognome + stagione
+                    # Cerca CalciatoreStagione per nome + stagione
                     cs = CalciatoreStagione.objects.filter(
-                        calciatore__cognome__iexact=cognome_raw,
+                        calciatore__nome__icontains=cognome_raw,
                         stagione=stagione
                     ).first()
 
@@ -209,7 +209,7 @@ def rosa_view(request, lega_id, squadra_id):
 def ingaggio_rimuovi(request, lega_id, squadra_id, ingaggio_id):
     """Rimuove un giocatore dalla rosa"""
     ingaggio = get_object_or_404(Ingaggio, id=ingaggio_id, fantasquadra__id=squadra_id)
-    nome = ingaggio.calciatore_stagione.calciatore.cognome
+    nome = ingaggio.calciatore_stagione.calciatore.nome
     ingaggio.delete()
     messages.success(request, f'{nome} rimosso dalla rosa.')
     return redirect('rosa_view', lega_id=lega_id, squadra_id=squadra_id)

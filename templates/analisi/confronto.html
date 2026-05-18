@@ -7,8 +7,8 @@
 <div class="page-subtitle">Metti a confronto il rendimento storico di due calciatori</div>
 
 <form method="get" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:28px;">
-    <input class="form-input" name="q1" value="{{ q1 }}" placeholder="Giocatore 1 (cognome)" style="max-width:300px;">
-    <input class="form-input" name="q2" value="{{ q2 }}" placeholder="Giocatore 2 (cognome)" style="max-width:300px;">
+    <input class="form-input" name="q1" value="{{ q1 }}" placeholder="Giocatore 1 (nome)" style="max-width:300px;">
+    <input class="form-input" name="q2" value="{{ q2 }}" placeholder="Giocatore 2 (nome)" style="max-width:300px;">
     <button type="submit" class="btn btn-primary">Confronta</button>
 </form>
 
@@ -21,7 +21,7 @@
     <div class="card" style="text-align:center; {% if calc1 %}border-color:var(--accent);{% endif %}">
         {% if calc1 %}
         <div style="font-size:36px; margin-bottom:8px;">{% if calc1.ruolo_base == 'P' %}🧤{% elif calc1.ruolo_base == 'D' %}🛡️{% elif calc1.ruolo_base == 'C' %}⚙️{% else %}⚡{% endif %}</div>
-        <div style="font-size:20px; font-weight:700;">{{ calc1.cognome }} {{ calc1.nome }}</div>
+        <div style="font-size:20px; font-weight:700;">{{ calc1.nome }}</div>
         <span class="badge badge-{{ calc1.ruolo_base }}" style="margin-top:6px;">{{ calc1.get_ruolo_base_display }}</span>
         {% else %}
         <div style="color:var(--text-muted); padding:20px;">—</div>
@@ -30,7 +30,7 @@
     <div class="card" style="text-align:center; {% if calc2 %}border-color:var(--red);{% endif %}">
         {% if calc2 %}
         <div style="font-size:36px; margin-bottom:8px;">{% if calc2.ruolo_base == 'P' %}🧤{% elif calc2.ruolo_base == 'D' %}🛡️{% elif calc2.ruolo_base == 'C' %}⚙️{% else %}⚡{% endif %}</div>
-        <div style="font-size:20px; font-weight:700;">{{ calc2.cognome }} {{ calc2.nome }}</div>
+        <div style="font-size:20px; font-weight:700;">{{ calc2.nome }}</div>
         <span class="badge badge-{{ calc2.ruolo_base }}" style="margin-top:6px;">{{ calc2.get_ruolo_base_display }}</span>
         {% else %}
         <div style="color:var(--text-muted); padding:20px;">—</div>
@@ -47,12 +47,12 @@
         <thead>
         <tr>
             <th>Stagione</th>
-            <th style="color:var(--accent);">{{ calc1.cognome|default:"—" }} — Squadra</th>
+            <th style="color:var(--accent);">{{ calc1.nome|default:"—" }} — Squadra</th>
             <th style="color:var(--accent); text-align:right;">Mv</th>
             <th style="color:var(--accent); text-align:right;">Fm</th>
             <th style="color:var(--accent); text-align:right;">Gol</th>
             <th style="width:1px; background:var(--border);"></th>
-            <th style="color:var(--red);">{{ calc2.cognome|default:"—" }} — Squadra</th>
+            <th style="color:var(--red);">{{ calc2.nome|default:"—" }} — Squadra</th>
             <th style="color:var(--red); text-align:right;">Mv</th>
             <th style="color:var(--red); text-align:right;">Fm</th>
             <th style="color:var(--red); text-align:right;">Gol</th>

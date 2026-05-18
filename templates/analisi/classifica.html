@@ -69,7 +69,7 @@
         {% with stat=cs.statistiche_riassuntive %}
         <tr>
             <td style="color:var(--text-muted); font-size:12px;">{{ forloop.counter }}</td>
-            <td style="font-weight:500;">{{ cs.calciatore.cognome }} <span style="color:var(--text-muted); font-size:12px;">{{ cs.calciatore.nome }}</span></td>
+            <td style="font-weight:500;">{{ cs.calciatore.nome }}</td>
             <td style="color:var(--text-muted); font-size:13px;">{{ cs.squadra_reale }}</td>
             <td><span class="badge badge-{{ cs.ruolo_stagione }}">{{ cs.ruolo_stagione }}</span></td>
             <td class="num">{{ cs.quotazione_iniziale }}</td>
@@ -80,7 +80,7 @@
             <td class="num">{% if stat.assist %}{{ stat.assist }}{% else %}—{% endif %}</td>
             <td class="num">{% if stat.ammonizioni %}<span style="color:var(--yellow);">{{ stat.ammonizioni }}</span>{% else %}—{% endif %}</td>
             <td class="num">{% if stat.espulsioni %}<span style="color:var(--red);">{{ stat.espulsioni }}</span>{% else %}—{% endif %}</td>
-            <td><a href="/analisi/giocatore/?q={{ cs.calciatore.cognome }}" class="btn btn-secondary btn-sm">Scheda</a></td>
+            <td><a href="/analisi/giocatore/?q={{ cs.calciatore.nome }}" class="btn btn-secondary btn-sm">Scheda</a></td>
         </tr>
         {% endwith %}
         {% empty %}

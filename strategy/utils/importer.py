@@ -121,17 +121,34 @@ class PreastaImporter:
                     squadra = self._get_or_create_squadra(team_nome)
 
                 # 2. Trova o Crea Anagrafica Calciatore
-                parti = nome_completo.rsplit(' ', 1)
-                cognome_excel = parti[0].strip()
-                nome_excel = parti[1].strip() if len(parti) > 1 else ""
-
-                calciatore = Calciatore.objects.filter(cognome__iexact=cognome_excel).first()
+                fanta_id = row.get('Cod.') if 'Cod.' in row else row.get('Id')
+                if pd.notna(fanta_id):
+                    fanta_id = int(fanta_id)
+                else:
+                    fanta_id = None
+                
+                calciatore = None
+                if fanta_id:
+                    calciatore = Calciatore.objects.filter(fanta_id=fanta_id).first()
+                
                 if not calciatore:
-                    calciatore, _ = Calciatore.objects.get_or_create(
-                        cognome=cognome_excel,
-                        nome=nome_excel,
-                        defaults={'ruolo_base': str(row.get('Ruolo', 'C'))}
-                    )
+                    calciatore = Calciatore.objects.filter(nome__iexact=nome_completo).first()
+                    if not calciatore:
+                        possibili = list(Calciatore.objects.filter(nome__icontains=nome_completo))
+                        if len(possibili) == 1:
+                            calciatore = possibili[0]
+                    
+                    if calciatore and fanta_id:
+                        calciatore.fanta_id = fanta_id
+                        calciatore.save()
+                    elif not calciatore:
+                        calciatore, _ = Calciatore.objects.get_or_create(
+                            fanta_id=fanta_id,
+                            defaults={
+                                'nome': nome_completo,
+                                'ruolo_base': str(row.get('R', row.get('Ruolo', 'C')))
+                            }
+                        )
 
                 # 3. Assicura che esista il Calciatore legato alla Stagione
                 cs, _ = CalciatoreStagione.objects.get_or_create(
@@ -139,7 +156,7 @@ class PreastaImporter:
                     stagione=stagione_attiva,
                     defaults={
                         'squadra_reale': squadra,
-                        'ruolo_stagione': str(row.get('Ruolo', 'C')),
+                        'ruolo_stagione': str(row.get('R', row.get('Ruolo', 'C'))),
                         'quotazione_iniziale': row.get('Quo', 1) or 1
                     }
                 )

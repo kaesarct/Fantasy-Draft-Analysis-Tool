@@ -35,4 +35,4 @@ class AnalisiPreAsta(models.Model):
         unique_together = ('calciatore_stagione', 'utente')
 
     def __str__(self):
-        return f"Strategia {self.utente.username} - {self.calciatore_stagione.calciatore.cognome}"
+        return f"Strategia {self.utente.username} - {self.calciatore_stagione.calciatore.nome}"

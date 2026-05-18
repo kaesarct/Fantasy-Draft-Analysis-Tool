@@ -76,10 +76,9 @@
             <tr>
                 <td><span class="badge badge-{{ cs.ruolo_stagione }}">{{ cs.ruolo_stagione }}</span></td>
                 <td>
-                    <a href="/analisi/giocatore/?q={{ cs.calciatore.cognome }}" style="color:var(--text); text-decoration:none; font-weight:500;">
-                        {{ cs.calciatore.cognome }}
+                    <a href="/analisi/giocatore/?q={{ cs.calciatore.nome }}" style="color:var(--text); text-decoration:none; font-weight:500;">
+                        {{ cs.calciatore.nome }}
                     </a>
-                    <span style="color:var(--text-muted); font-size:12px;"> {{ cs.calciatore.nome }}</span>
                 </td>
                 <td style="color:var(--text-muted); font-size:13px;">{{ cs.squadra_reale }}</td>
                 <td class="num">{{ cs.quotazione_iniziale }}</td>
@@ -88,7 +87,7 @@
                 </td>
                 <td class="num" style="color:var(--yellow); font-weight:600;">{{ ing.costo_acquisto }}</td>
                 <td>
-                    <form method="post" action="{% url 'ingaggio_rimuovi' lega.id squadra.id ing.id %}" onsubmit="return confirm('Rimuovere {{ cs.calciatore.cognome }}?')">
+                    <form method="post" action="{% url 'ingaggio_rimuovi' lega.id squadra.id ing.id %}" onsubmit="return confirm('Rimuovere {{ cs.calciatore.nome }}?')">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-danger btn-sm">✕</button>
                     </form>
@@ -111,7 +110,7 @@
         <div class="card" style="border-color:var(--accent);">
             <div class="section-title" style="color:var(--accent); margin-bottom:16px;">📤 Upload Rosa da Excel</div>
             <div style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">
-                Il file Excel deve avere le colonne: <code style="background:var(--bg3); padding:2px 6px; border-radius:4px;">Calciatore</code> (cognome) e <code style="background:var(--bg3); padding:2px 6px; border-radius:4px;">Costo</code>
+                Il file Excel deve avere le colonne: <code style="background:var(--bg3); padding:2px 6px; border-radius:4px;">Calciatore</code> (nome) e <code style="background:var(--bg3); padding:2px 6px; border-radius:4px;">Costo</code>
             </div>
             <form method="post" enctype="multipart/form-data">
                 {% csrf_token %}

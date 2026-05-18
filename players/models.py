@@ -3,16 +3,15 @@ from core.models import Stagione, SquadraReale
 
 class Calciatore(models.Model):
     RUOLI = [('P', 'Portiere'), ('D', 'Difensore'), ('C', 'Centrocampista'), ('A', 'Attaccante')]
-    nome = models.CharField(max_length=100)
-    cognome = models.CharField(max_length=100)
+    fanta_id = models.PositiveIntegerField(unique=True, null=True, blank=True, help_text="ID ufficiale di Fantacalcio")
+    nome = models.CharField(max_length=255)
     ruolo_base = models.CharField(max_length=1, choices=RUOLI, help_text="Ruolo di default, può essere sovrascritto nella stagione")
 
     class Meta:
         verbose_name_plural = "Calciatori"
-        unique_together = ('nome', 'cognome') 
 
     def __str__(self):
-        return f"{self.cognome} {self.nome}"
+        return self.nome
 
 class CalciatoreStagione(models.Model):
     """Lega un calciatore a una specifica stagione, permettendo il cambio di ruolo nel tempo"""
