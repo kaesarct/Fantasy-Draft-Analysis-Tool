@@ -245,6 +245,10 @@
     <a class="nav-link {% block nav_classifica %}{% endblock %}" href="/analisi/classifica/">📊 Classifica</a>
     <a class="nav-link {% block nav_confronto %}{% endblock %}" href="/analisi/confronto/">⚡ Confronto</a>
     <a class="nav-link {% block nav_leghe %}{% endblock %}" href="/leghe/">🏆 Leghe</a>
+    {% if user.is_authenticated %}
+    <a class="nav-link {% block nav_report %}{% endblock %}" href="{% url 'visualizza_report' %}">📋 Report IA</a>
+    <a class="nav-link" href="#" onclick="runAiAnalysis(event)">🤖 Analisi IA</a>
+    {% endif %}
     <span class="nav-spacer"></span>
     {% if user.is_authenticated %}
     <span class="nav-user">{{ user.username }}</span>
@@ -269,5 +273,49 @@
 </div>
 
 {% block extra_script %}{% endblock %}
+<script>
+function runAiAnalysis(event) {
+    event.preventDefault();
+    if (!confirm("Vuoi avviare l'analisi avanzata con l'IA in background?")) return;
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || getCookie('csrftoken');
+    
+    fetch('{% url "run_ai_analysis" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        }
+        throw new Error('Errore di rete o sessione non valida.');
+    })
+    .then(data => {
+        alert(data.status || "Analisi IA avviata con successo!");
+    })
+    .catch(error => {
+        console.error(error);
+        alert("Errore nell'avvio dell'analisi: " + error.message);
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
 </body>
 </html>

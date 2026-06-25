@@ -1,0 +1,15 @@
+analysis_task:
+  description: >
+    Esegui immediatamente il tool 'Leggi dati database e documenti infortuni' per ottenere l'elenco dei calciatori e i bollettini.
+    Nota bene: i dati sono in formato JSON compatto con chiavi abbreviate (non cercare file .zip o .tar.gz su disco, i dati vengono estratti direttamente dal tool).
+    Decodifica le chiavi abbreviate (n=nome, r=ruolo, s=squadra, q=quotazione, pv=presenze, mv=media voto, fm=fanta-media, gf=gol, gs=gol subiti, as=assist, am=ammonizioni, es=espulsioni).
+    NON chiedere mai percorsi di directory all'utente.
+    Incrocia lo storico di voti (mv, fm), le quotazioni (q) e le squadre reali (s) dei calciatori con gli infortuni per elaborare una guida strategica su come COMPORRE LA SQUADRA VINCENTE.
+    Fornisci indicazioni precise su:
+    1. La struttura ottimale della rosa (quanti top player, quante scommesse e quanti titolari low-cost per ogni ruolo per vincere).
+    2. La correlazione tra le squadre reali e le probabilità di successo (es. difensori di squadre reali con pochi gol subiti 'gs', attaccanti di squadre reali prolifiche).
+    3. Come ottimizzare il budget d'asta (quotazioni) per massimizzare la fanta-media complessiva della rosa.
+    4. Elenco ragionato dei Top Buy per ruolo, scommesse ideali e giocatori da evitare.
+  expected_output: >
+    Un report strategico in Markdown dettagliato che spiega passo-passo come comporre la squadra vincente basandosi sullo storico dei dati, con tabelle di confronto e consigli pratici.
+  agent: fanta_analyst

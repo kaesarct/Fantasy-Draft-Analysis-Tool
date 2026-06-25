@@ -1,0 +1,169 @@
+{% extends 'base.html' %}
+{% block title %}Report Analisi Avanzata IA - FantaDash{% endblock %}
+{% block nav_report %}active{% endblock %}
+
+{% block extra_style %}
+<style>
+    .report-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    .report-header-card {
+        background: linear-gradient(135deg, var(--bg2) 0%, #1a2230 100%);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    .report-title-section h1 {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 6px;
+    }
+    .report-title-section p {
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+    .report-content-card {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 32px;
+        line-height: 1.6;
+        color: #e6edf3;
+    }
+    
+    /* Markdown Styles */
+    .markdown-body h2 {
+        font-size: 20px;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 8px;
+        margin-top: 24px;
+        margin-bottom: 16px;
+        color: var(--accent);
+    }
+    .markdown-body h3 {
+        font-size: 16px;
+        margin-top: 20px;
+        margin-bottom: 12px;
+        color: var(--text);
+        border-left: 3px solid var(--accent);
+        padding-left: 10px;
+    }
+    .markdown-body h4 {
+        font-size: 14px;
+        margin-top: 16px;
+        margin-bottom: 8px;
+        color: var(--yellow);
+    }
+    .markdown-body p {
+        margin-bottom: 14px;
+        font-size: 14px;
+    }
+    .markdown-body ul, .markdown-body ol {
+        margin-bottom: 16px;
+        padding-left: 20px;
+        font-size: 14px;
+    }
+    .markdown-body li {
+        margin-bottom: 6px;
+    }
+    .markdown-body table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+        margin-bottom: 24px;
+        font-size: 13px;
+    }
+    .markdown-body th {
+        background: var(--bg3);
+        color: var(--text-muted);
+        text-align: left;
+        font-weight: 600;
+        padding: 10px 12px;
+        border-bottom: 2px solid var(--border);
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+    }
+    .markdown-body td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+    }
+    .markdown-body tr:hover td {
+        background: rgba(88, 166, 255, 0.05);
+    }
+    .markdown-body hr {
+        border: 0;
+        height: 1px;
+        background: var(--border);
+        margin: 24px 0;
+    }
+    .markdown-body strong {
+        color: var(--text);
+    }
+    
+    /* Alerts and Highlights */
+    .markdown-body blockquote {
+        margin: 16px 0;
+        padding: 12px 16px;
+        background: rgba(88, 166, 255, 0.07);
+        border-left: 4px solid var(--accent);
+        border-radius: 0 var(--radius) var(--radius) 0;
+    }
+    .markdown-body blockquote p {
+        margin-bottom: 0;
+        font-style: italic;
+        color: var(--text);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="report-container">
+    <div class="report-header-card">
+        <div class="report-title-section">
+            <h1>📋 Report Analisi Avanzata</h1>
+            <p>Generato autonomamente dal team di agenti AI incrociando i file e dati caricati</p>
+        </div>
+        <div>
+            <button onclick="runAiAnalysis(event)" class="btn btn-primary">
+                🔄 Rigenera Report
+            </button>
+        </div>
+    </div>
+
+    <div class="report-content-card">
+        <div id="markdown-output" class="markdown-body">
+            <!-- Loading state -->
+            <p style="color: var(--text-muted); text-align: center; padding: 40px 0;">
+                Caricamento e formattazione del report in corso...
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<!-- Carichiamo marked.js per il rendering lato client del Markdown -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Leggiamo il markdown raw inserito in modo sicuro
+        const rawMarkdown = `{{ content|escapejs }}`;
+        
+        try {
+            // Renderizziamo il markdown
+            document.getElementById('markdown-output').innerHTML = marked.parse(rawMarkdown);
+        } catch (e) {
+            console.error("Errore nel parsing del markdown:", e);
+            document.getElementById('markdown-output').innerHTML = `<p class="text-danger">Errore nel rendering del report.</p>`;
+        }
+    });
+</script>
+{% endblock %}

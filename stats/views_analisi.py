@@ -196,3 +196,185 @@ def confronto_view(request):
         'calc1': calc1, 'storico1': storico1,
         'calc2': calc2, 'storico2': storico2,
     })
+
+
+# ─────────────────────────────────────────────────────────────
+# AI ANALYSIS VIEW — run crewai in background thread
+# ─────────────────────────────────────────────────────────────
+
+@login_required
+def run_ai_analysis(request):
+    if request.method == 'POST':
+        import threading
+        import os
+        from django.conf import settings
+        from django.http import JsonResponse
+        from ai_analyst.fanta_crew.crew import FantaAnalystCrew
+
+        def _run_crew():
+            log.info("[AI ANALYSIS] Inizio elaborazione CrewAI in background thread.")
+            report_path = os.path.join(settings.BASE_DIR, 'report_analisi_avanzata.md')
+            try:
+                # Assicuriamoci che la cartella esista
+                doc_dir = os.path.join(settings.BASE_DIR, 'dati_scaricati', 'documenti_ia')
+                os.makedirs(doc_dir, exist_ok=True)
+
+                # Reset del cache di CrewAI per forzare una nuova esecuzione ad ogni richiesta
+                from crewai.utilities.task_output_storage_handler import TaskOutputStorageHandler
+                try:
+                    TaskOutputStorageHandler().reset()
+                    log.info("[AI ANALYSIS] Cache di CrewAI resettata prima del kickoff.")
+                except Exception as cache_err:
+                    log.warning("[AI ANALYSIS] Impossibile resettare la cache di CrewAI: %s", cache_err)
+
+                crew_instance = FantaAnalystCrew()
+                inputs = {
+                    'topic': 'Analisi incrociata tra le probabili formazioni (PDF/Immagini) e le quotazioni attuali (Excel).'
+                }
+                result = crew_instance.crew().kickoff(inputs=inputs)
+                log.info("[AI ANALYSIS] CrewAI completata con successo.")
+            except Exception as e:
+                log.exception("[AI ANALYSIS] Errore nell'esecuzione della CrewAI, avvio generazione report fallback: %s", e)
+                try:
+                    genera_report_fallback(report_path, str(e))
+                    log.info("[AI ANALYSIS] Report di fallback generato con successo.")
+                except Exception as ex:
+                    log.exception("[AI ANALYSIS] Errore nella generazione del report di fallback: %s", ex)
+
+        thread = threading.Thread(target=_run_crew)
+        thread.start()
+        
+        return JsonResponse({"status": "Analisi IA avviata in background!"})
+    
+    from django.http import JsonResponse
+    return JsonResponse({"error": "Metodo non consentito"}, status=405)
+
+
+def genera_report_fallback(report_path, errore_originale):
+    from players.models import CalciatoreStagione
+    import os
+
+    # 1. Recupera i migliori per ruolo (almeno 3 partite)
+    def get_top_role(ruolo, limit=10):
+        return CalciatoreStagione.objects.filter(
+            ruolo_stagione=ruolo,
+            statistiche_riassuntive__partite_a_voto__gte=3
+        ).select_related('calciatore', 'squadra_reale', 'statistiche_riassuntive').order_by('-statistiche_riassuntive__fanta_media')[:limit]
+
+    def get_top_scorers(limit=10):
+        return CalciatoreStagione.objects.filter(
+            statistiche_riassuntive__partite_a_voto__gte=3
+        ).select_related('calciatore', 'squadra_reale', 'statistiche_riassuntive').order_by('-statistiche_riassuntive__gol_fatti')[:limit]
+
+    def get_top_assist(limit=10):
+        return CalciatoreStagione.objects.filter(
+            statistiche_riassuntive__partite_a_voto__gte=3
+        ).select_related('calciatore', 'squadra_reale', 'statistiche_riassuntive').order_by('-statistiche_riassuntive__assist')[:limit]
+
+    # Prendi i dati
+    top_p = get_top_role('P', 5)
+    top_d = get_top_role('D', 10)
+    top_c = get_top_role('C', 10)
+    top_a = get_top_role('A', 10)
+    bomber = get_top_scorers(10)
+    assistman = get_top_assist(10)
+
+    # Leggi infortuni da documenti_ia per estrarre parole chiave
+    infortuni_rilevati = []
+    base_dir = os.path.dirname(report_path)
+    doc_dir = os.path.join(base_dir, 'dati_scaricati', 'documenti_ia')
+    if os.path.exists(doc_dir):
+        for filename in os.listdir(doc_dir):
+            if filename == '.gitkeep':
+                continue
+            infortuni_rilevati.append(f"- Letto file notizie: `{filename}`")
+
+    # Costruisci il markdown
+    md = []
+    md.append("# 📋 Report Analisi Fantacalcio (Modalità Fallback)")
+    md.append(f"\n> ⚠️ **Nota:** Questo report è stato generato in modalità di fallback locale poiché la chiave API Gemini ha esaurito i crediti o la quota giornaliera gratuita ({errore_originale}). I dati presentati qui sotto sono reali e provengono dal tuo database locale aggiornato.\n")
+
+    md.append("## 📈 Top Player per Ruolo (Miglior Fanta-Media, min. 3 presenze)")
+
+    # Portieri
+    md.append("\n### 🧤 Portieri")
+    md.append("| Giocatore | Squadra | FM | MV | PV | GS |")
+    md.append("|---|---|---|---|---|---|")
+    for p in top_p:
+        st = p.statistiche_riassuntive
+        md.append(f"| **{p.calciatore.nome}** | {p.squadra_reale.nome} | {st.fanta_media:.2f} | {st.media_voto:.2f} | {st.partite_a_voto} | {st.gol_subiti} |")
+
+    # Difensori
+    md.append("\n### 🛡️ Difensori")
+    md.append("| Giocatore | Squadra | FM | MV | PV | Gol | Assist |")
+    md.append("|---|---|---|---|---|---|---|")
+    for d in top_d:
+        st = d.statistiche_riassuntive
+        md.append(f"| **{d.calciatore.nome}** | {d.squadra_reale.nome} | {st.fanta_media:.2f} | {st.media_voto:.2f} | {st.partite_a_voto} | {st.gol_fatti} | {st.assist} |")
+
+    # Centrocampisti
+    md.append("\n### 🪄 Centrocampisti")
+    md.append("| Giocatore | Squadra | FM | MV | PV | Gol | Assist |")
+    md.append("|---|---|---|---|---|---|---|")
+    for c in top_c:
+        st = c.statistiche_riassuntive
+        md.append(f"| **{c.calciatore.nome}** | {c.squadra_reale.nome} | {st.fanta_media:.2f} | {st.media_voto:.2f} | {st.partite_a_voto} | {st.gol_fatti} | {st.assist} |")
+
+    # Attaccanti
+    md.append("\n### ⚽ Attaccanti")
+    md.append("| Giocatore | Squadra | FM | MV | PV | Gol | Assist |")
+    md.append("|---|---|---|---|---|---|---|")
+    for a in top_a:
+        st = a.statistiche_riassuntive
+        md.append(f"| **{a.calciatore.nome}** | {a.squadra_reale.nome} | {st.fanta_media:.2f} | {st.media_voto:.2f} | {st.partite_a_voto} | {st.gol_fatti} | {st.assist} |")
+
+    md.append("\n## 🔥 Classifiche di Rendimento")
+
+    md.append("\n### 🎯 I Migliori Marcatori")
+    md.append("| Giocatore | Squadra | Gol | PV | FM |")
+    md.append("|---|---|---|---|---|")
+    for p in bomber:
+        st = p.statistiche_riassuntive
+        md.append(f"| **{p.calciatore.nome}** | {p.squadra_reale.nome} | {st.gol_fatti} | {st.partite_a_voto} | {st.fanta_media:.2f} |")
+
+    md.append("\n### 🅰️ I Migliori Assistman")
+    md.append("| Giocatore | Squadra | Assist | PV | FM |")
+    md.append("|---|---|---|---|---|")
+    for p in assistman:
+        st = p.statistiche_riassuntive
+        md.append(f"| **{p.calciatore.nome}** | {p.squadra_reale.nome} | {st.assist} | {st.partite_a_voto} | {st.fanta_media:.2f} |")
+
+    md.append("\n## 🏥 Notizie ed Infortuni Rilevati")
+    if infortuni_rilevati:
+        md.extend(infortuni_rilevati)
+        md.append("\n*Controlla la cartella `dati_scaricati/documenti_ia/` per i dettagli completi dei file sopra indicati.*")
+    else:
+        md.append("\nNessun file di notizie o infortunio rilevato in `dati_scaricati/documenti_ia/`.")
+
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(md))
+
+
+@login_required
+def visualizza_report(request):
+    import os
+    from django.conf import settings
+    
+    report_path = os.path.join(settings.BASE_DIR, 'report_analisi_avanzata.md')
+    content = ""
+    exists = False
+    
+    if os.path.exists(report_path):
+        try:
+            with open(report_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            exists = True
+        except Exception as e:
+            content = f"Errore durante la lettura del report: {e}"
+    else:
+        content = "Nessun report generato. Clicca su 'Rigenera Report' per avviare l'analisi."
+        
+    return render(request, 'analisi/report.html', {
+        'content': content,
+        'exists': exists
+    })
