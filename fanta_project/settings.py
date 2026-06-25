@@ -25,12 +25,16 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-x26i1aniv=dmu8b@0o*ymvyzzxvs*7#5@jrxpgmgnpr-k3^&%z'
+# Letto da variabile d'ambiente; il fallback è solo per lo sviluppo locale.
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-x26i1aniv=dmu8b@0o*ymvyzzxvs*7#5@jrxpgmgnpr-k3^&%z',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
 
 # Application definition
@@ -50,6 +54,15 @@ INSTALLED_APPS = [
     'fantacalcio',
     'stats',
     'strategy',
+    'competizioni',
+    'mercato',
+    'infortuni',
+
+    # Terze parti
+    'rest_framework',
+
+    # API
+    'api',
 ]
 
 AUTH_USER_MODEL = 'users.FantaPresidente'
@@ -135,6 +148,10 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Media files (loghi franchigie, ecc.)
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
@@ -198,3 +215,27 @@ LOGGING = {
         },
     },
 }
+
+# ---------------------------------------------------------------------------
+# Django REST Framework + JWT (API per bot Telegram e frontend)
+# ---------------------------------------------------------------------------
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+from datetime import timedelta  # noqa: E402
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+}
+
+# Secret del webhook Telegram (header X-Telegram-Bot-Api-Secret-Token).
+# Da impostare in produzione; senza valore il webhook rifiuta tutte le richieste.
+TELEGRAM_WEBHOOK_SECRET = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')

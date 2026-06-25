@@ -19,4 +19,7 @@ urlpatterns = [
 
     # Gestione fantacompetizioni
     path('leghe/', include('fantacalcio.urls')),
+
+    # API REST (bot Telegram e frontend)
+    path('api/', include('api.urls')),
 ]

@@ -4,6 +4,10 @@ class Stagione(models.Model):
     nome = models.CharField(max_length=9, unique=True, help_text="Es: 2023/2024")
     attiva = models.BooleanField(default=False, help_text="Segna la stagione attualmente in corso")
 
+    data_inizio_serie_a = models.DateField(null=True, blank=True, help_text="Data della 1a giornata di Serie A")
+    data_fine_serie_a = models.DateField(null=True, blank=True, help_text="Data dell'ultima giornata di Serie A")
+    crediti_default = models.PositiveIntegerField(default=350, help_text="Crediti (FM) iniziali di default per le squadre della stagione")
+
     class Meta:
         verbose_name_plural = "Stagioni"
 

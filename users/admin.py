@@ -4,4 +4,8 @@ from .models import FantaPresidente
 
 @admin.register(FantaPresidente)
 class FantaPresidenteAdmin(UserAdmin):
-    pass
+    # Dato personale (GDPR): visibile solo nell'admin (accesso ristretto a is_staff)
+    fieldsets = UserAdmin.fieldsets + (
+        ('Telegram', {'fields': ('telegram_user_id',)}),
+    )
+    list_display = UserAdmin.list_display + ('telegram_user_id',)
