@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .permissions import utente_e_presidente
 from core.models import Stagione
 from players.models import Calciatore, CalciatoreStagione
 from fantacalcio.models import FantaSquadra, Ingaggio
@@ -83,8 +84,24 @@ class ScambioSerializer(serializers.ModelSerializer):
         read_only_fields = ['stato']
 
     def validate(self, attrs):
-        if attrs['squadra_a'].lega_id != attrs['squadra_b'].lega_id:
+        squadra_a = attrs['squadra_a']
+        squadra_b = attrs['squadra_b']
+        if squadra_a.lega_id != squadra_b.lega_id:
             raise serializers.ValidationError("Gli scambi sono ammessi solo tra squadre della stessa lega.")
+
+        request = self.context.get('request')
+        user = request.user if request else None
+        if not utente_e_presidente(user, squadra_a):
+            raise serializers.ValidationError("Puoi proporre scambi solo per una squadra che gestisci.")
+
+        squadre_ammesse = {squadra_a.pk, squadra_b.pk}
+        for item in attrs['items']:
+            cedente = item['squadra_cedente']
+            ingaggio = item['ingaggio']
+            if cedente.pk not in squadre_ammesse:
+                raise serializers.ValidationError("La squadra cedente deve essere una delle due coinvolte nello scambio.")
+            if ingaggio.fantasquadra_id != cedente.pk:
+                raise serializers.ValidationError(f"Il giocatore '{ingaggio}' non appartiene a {cedente.nome}.")
         return attrs
 
     def create(self, validated_data):
@@ -107,6 +124,17 @@ class FormazioneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Formazione
         fields = ['id', 'squadra', 'partita', 'giornata_serie_a', 'modulo', 'fonte', 'giocatori']
+
+    def validate(self, attrs):
+        squadra = attrs['squadra']
+        request = self.context.get('request')
+        user = request.user if request else None
+        if not utente_e_presidente(user, squadra):
+            raise serializers.ValidationError("Puoi inviare formazioni solo per una squadra che gestisci.")
+        for g in attrs['giocatori']:
+            if g['ingaggio'].fantasquadra_id != squadra.pk:
+                raise serializers.ValidationError(f"Il giocatore '{g['ingaggio']}' non è in rosa di {squadra.nome}.")
+        return attrs
 
     def create(self, validated_data):
         giocatori = validated_data.pop('giocatori')

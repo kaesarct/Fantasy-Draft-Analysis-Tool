@@ -15,6 +15,7 @@ from fantacalcio.models import FantaSquadra, Ingaggio
 from competizioni.models import Classifica, Formazione
 from infortuni.models import Infortunio
 from mercato.models import Scambio
+from .permissions import utente_e_presidente
 from .serializers import (
     StagioneSerializer, CalciatoreSerializer, FreeAgentSerializer, RosterItemSerializer,
     FantaSquadraSerializer, ClassificaSerializer, InfortunioSerializer,
@@ -121,6 +122,12 @@ class ScambioViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
     @action(detail=True, methods=['patch'])
     def confirm(self, request, pk=None):
         scambio = self.get_object()
+        if scambio.stato != Scambio.Stato.PROPOSTO:
+            return Response({'detail': 'Solo gli scambi in stato PROPOSTO possono essere confermati.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not utente_e_presidente(request.user, scambio.squadra_b):
+            return Response({'detail': 'Solo un presidente della squadra controparte può confermare lo scambio.'},
+                            status=status.HTTP_403_FORBIDDEN)
         scambio.stato = Scambio.Stato.CONFERMATO
         scambio.confermato_il = timezone.now()
         scambio.save(update_fields=['stato', 'confermato_il'])
