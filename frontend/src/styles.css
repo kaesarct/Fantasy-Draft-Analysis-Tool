@@ -1,0 +1,237 @@
+/* FT Platform — Global Design System */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ── Base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Dark palette */
+  --bg-base:       #0d1117;
+  --bg-surface:    #161b22;
+  --bg-card:       #1c2128;
+  --bg-elevated:   #22272e;
+  --border-color:  #30363d;
+  --border-subtle: #21262d;
+
+  /* Brand accents */
+  --accent-green:  #3fb950;
+  --accent-blue:   #58a6ff;
+  --accent-orange: #f0883e;
+  --accent-red:    #f85149;
+  --accent-purple: #bc8cff;
+  --accent-gold:   #d29922;
+
+  /* Text */
+  --text-primary:   #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted:     #6e7681;
+
+  /* Badges per lega */
+  --gold-league:    #ffd700;
+  --bronze-league:  #cd7f32;
+  --carbon-league:  #636363;
+  --silver-league:  #c0c0c0;
+  --ciempions:      #3d85c8;
+
+  /* Spacing & radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Transitions */
+  --transition: 0.18s ease;
+
+  /* Font */
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── PrimeNG overrides — Noir theme dark ──────────────────── */
+.p-component { font-family: var(--font-sans); }
+
+/* Cards */
+.p-card {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--text-primary) !important;
+}
+.p-card .p-card-title { color: var(--text-primary); font-weight: 700; }
+.p-card .p-card-subtitle { color: var(--text-secondary); }
+
+/* DataTable */
+.p-datatable .p-datatable-thead > tr > th {
+  background: var(--bg-elevated) !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border-color) !important;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.p-datatable .p-datatable-tbody > tr {
+  background: var(--bg-card) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  transition: background var(--transition);
+}
+.p-datatable .p-datatable-tbody > tr:hover {
+  background: var(--bg-elevated) !important;
+}
+.p-datatable .p-datatable-tbody > tr > td {
+  color: var(--text-primary) !important;
+  border: none !important;
+  padding: 12px 16px !important;
+}
+
+/* Buttons */
+.p-button {
+  border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important;
+  transition: all var(--transition) !important;
+}
+.p-button-success { background: var(--accent-green) !important; border-color: var(--accent-green) !important; }
+.p-button-info    { background: var(--accent-blue) !important; border-color: var(--accent-blue) !important; }
+.p-button-warning { background: var(--accent-orange) !important; border-color: var(--accent-orange) !important; }
+
+/* Tabs */
+.p-tabview .p-tabview-nav {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+  color: var(--accent-green) !important;
+  border-bottom-color: var(--accent-green) !important;
+}
+.p-tabview .p-tabview-nav-link { color: var(--text-secondary) !important; }
+.p-tabview .p-tabview-panels { background: transparent !important; }
+
+/* Tags */
+.p-tag { border-radius: 20px !important; font-size: 11px !important; font-weight: 600 !important; }
+
+/* Input */
+.p-inputtext {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--radius-sm) !important;
+}
+.p-inputtext:focus {
+  border-color: var(--accent-blue) !important;
+  box-shadow: 0 0 0 3px rgba(88,166,255,0.15) !important;
+}
+
+/* Dropdown */
+.p-dropdown {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-color) !important;
+  border-radius: var(--radius-sm) !important;
+}
+.p-dropdown-panel {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+}
+.p-dropdown-item { color: var(--text-primary) !important; }
+.p-dropdown-item:hover { background: var(--bg-elevated) !important; }
+
+/* ── Utility classes ──────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  transition: border-color var(--transition), transform var(--transition);
+}
+.stat-card:hover {
+  border-color: var(--accent-blue);
+  transform: translateY(-2px);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-gold    { background: rgba(255,215,0,.15); color: var(--gold-league); border: 1px solid rgba(255,215,0,.3); }
+.badge-bronze  { background: rgba(205,127,50,.15); color: var(--bronze-league); border: 1px solid rgba(205,127,50,.3); }
+.badge-carbon  { background: rgba(99,99,99,.2); color: var(--carbon-league); border: 1px solid rgba(99,99,99,.4); }
+.badge-silver  { background: rgba(192,192,192,.15); color: var(--silver-league); border: 1px solid rgba(192,192,192,.3); }
+.badge-ciempions { background: rgba(61,133,200,.15); color: var(--ciempions); border: 1px solid rgba(61,133,200,.3); }
+.badge-green   { background: rgba(63,185,80,.12); color: var(--accent-green); border: 1px solid rgba(63,185,80,.3); }
+.badge-red     { background: rgba(248,81,73,.12); color: var(--accent-red); border: 1px solid rgba(248,81,73,.3); }
+
+.role-badge { 
+  width: 28px; height: 28px;
+  border-radius: 6px; 
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800;
+}
+.role-P { background: rgba(88,166,255,.2); color: var(--accent-blue); }
+.role-D { background: rgba(63,185,80,.2); color: var(--accent-green); }
+.role-C { background: rgba(240,136,62,.2); color: var(--accent-orange); }
+.role-A { background: rgba(248,81,73,.2); color: var(--accent-red); }
+
+.text-muted { color: var(--text-muted) !important; }
+.text-secondary { color: var(--text-secondary) !important; }
+.text-accent { color: var(--accent-green) !important; }
+.text-positive { color: var(--accent-green) !important; }
+.text-negative { color: var(--accent-red) !important; }
+
+.section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 18px;
+  background: var(--accent-green);
+  border-radius: 2px;
+}
+
+/* Gradient hero */
+.hero-gradient {
+  background: linear-gradient(135deg, rgba(63,185,80,.08) 0%, var(--bg-card) 60%);
+  border: 1px solid rgba(63,185,80,.2);
+}
+
+/* Animate in */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.4s ease both; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

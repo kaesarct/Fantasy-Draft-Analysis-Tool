@@ -1,0 +1,63 @@
+# Stack di produzione per il deploy su NAS (vedi DEPLOY_NAS.md).
+# Differenze rispetto a docker-compose.yml (uso locale/dev):
+#   - nessuna porta di db/backend pubblicata sull'host: raggiungibili solo
+#     dalla rete Docker interna, tramite il reverse proxy Nginx del frontend
+#   - frontend servito da una build Angular di produzione + Nginx (non `ng serve`)
+#   - credenziali Postgres lette da variabili d'ambiente (root .env, gitignorato)
+#     invece di essere hardcoded
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-ft_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ft_password}
+      POSTGRES_DB: ${DB_NAME:-ft_platform}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ft_user} -d ${DB_NAME:-ft_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── FastAPI Backend (nessuna porta esposta sull'host) ───────
+  backend:
+    build: ./backend
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-ft_user}
+      DB_PASSWORD: ${DB_PASSWORD:-ft_password}
+      DB_NAME: ${DB_NAME:-ft_platform}
+      FANTA_USERNAME: ${FANTA_USERNAME:-}
+      FANTA_PASSWORD: ${FANTA_PASSWORD:-}
+      FANTA_YEAR_QUOTAZIONI: ${FANTA_YEAR_QUOTAZIONI:-24}
+      FANTA_LEGA_NAME: ${FANTA_LEGA_NAME:-}
+      FANTA_SESSION_FILE: /app/tamarros_session.json
+      LOG_LEVEL: INFO
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:4200"]}
+    volumes:
+      - ./backend/downloads:/app/downloads
+      - ./backend/uploads:/app/uploads
+      - ./backend/tamarros_session.json:/app/tamarros_session.json
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Frontend Angular (build di produzione + Nginx) ──────────
+  # Pubblicato solo su loopback: raggiungibile esclusivamente dal reverse
+  # proxy Synology in esecuzione sullo stesso NAS, mai da LAN/Internet diretti.
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:4200:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:

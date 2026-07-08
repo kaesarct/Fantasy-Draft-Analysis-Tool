@@ -1,0 +1,10 @@
+doc
+.env
+.venv
+venv/
+__pycache__
+node_modules/
+
+tamarros_session.json
+backend/downloads/
+backend/uploads/
