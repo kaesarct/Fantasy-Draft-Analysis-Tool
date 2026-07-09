@@ -1,9 +1,12 @@
 """Sync service — orchestrates data download and DB update."""
 import pandas as pd
+from datetime import datetime
 from sqlalchemy.orm import Session
 from app.services.fanta_client import fanta_client
+from app.services.seriea_scraper import get_serie_a_injuries
 from app.models.player import Player, PlayerSnapshot, PlayerMatchScore
 from app.models.serie_a_team import SerieATeam
+from app.models.serie_a_injury import SerieAInjuryReport, SerieAInjuryArchive, SerieAInjuryDescription
 from app.models.season import Season
 
 import logging
@@ -128,3 +131,78 @@ def sync_votes(db: Session, season_id: int, match_day: int | None = None) -> dic
 
     db.commit()
     return {"ok": True, "saved": saved, "match_day": day}
+
+
+def _match_player_id(db: Session, player_name: str) -> int | None:
+    """Match esatto case-insensitive su Player.name; None se 0 o >1 risultati."""
+    matches = db.query(Player).filter(Player.name.ilike(player_name)).all()
+    return matches[0].id if len(matches) == 1 else None
+
+
+def sync_serie_a_injuries(db: Session) -> dict:
+    """Scarica infortunati-serie-a e aggiorna report attivi / storico / archivio."""
+    scraped = get_serie_a_injuries()
+    if not scraped:
+        return {"ok": False, "message": "Nessun dato ricevuto da fantacalcio.it"}
+
+    now = datetime.utcnow()
+    seen_keys = {(s["team_name"], s["player_name"]) for s in scraped}
+
+    # Archivia i report non piu' presenti sulla pagina (= rientrati)
+    archived = 0
+    for report in db.query(SerieAInjuryReport).all():
+        if (report.team_name, report.player_name) in seen_keys:
+            continue
+        archive = SerieAInjuryArchive(
+            player_name=report.player_name,
+            team_name=report.team_name,
+            player_id=report.player_id,
+            last_description=report.description,
+            started_at=report.first_seen_at,
+            ended_at=now,
+        )
+        db.add(archive)
+        db.flush()
+        db.query(SerieAInjuryDescription).filter(
+            SerieAInjuryDescription.report_id == report.id
+        ).update({"report_id": None, "archive_id": archive.id})
+        db.delete(report)
+        archived += 1
+
+    created = updated = unchanged = 0
+    for entry in scraped:
+        report = db.query(SerieAInjuryReport).filter(
+            SerieAInjuryReport.team_name == entry["team_name"],
+            SerieAInjuryReport.player_name == entry["player_name"],
+        ).first()
+
+        if not report:
+            report = SerieAInjuryReport(
+                player_name=entry["player_name"],
+                team_name=entry["team_name"],
+                player_id=_match_player_id(db, entry["player_name"]),
+                description=entry["description"],
+                first_seen_at=now,
+                last_seen_at=now,
+                last_updated_at=now,
+            )
+            db.add(report)
+            db.flush()
+            db.add(SerieAInjuryDescription(
+                report_id=report.id, description=entry["description"], recorded_at=now,
+            ))
+            created += 1
+        elif report.description != entry["description"]:
+            report.description = entry["description"]
+            report.last_updated_at = now
+            report.last_seen_at = now
+            db.add(SerieAInjuryDescription(
+                report_id=report.id, description=entry["description"], recorded_at=now,
+            ))
+            updated += 1
+        else:
+            report.last_seen_at = now
+            unchanged += 1
+
+    db.commit()
+    return {"ok": True, "created": created, "updated": updated, "unchanged": unchanged, "archived": archived}

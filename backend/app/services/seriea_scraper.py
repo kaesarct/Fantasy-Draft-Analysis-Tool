@@ -76,3 +76,33 @@ def get_probable_lineups() -> list[dict]:
             pass
 
     return players_data
+
+
+def get_serie_a_injuries() -> list[dict]:
+    """Scrapa la pagina pubblica con tutti gli infortunati di Serie A, per squadra."""
+    url = f"{settings.fanta_base_url}infortunati-serie-a"
+    try:
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error("get_serie_a_injuries error: %s", e)
+        return []
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    result = []
+    for card in soup.select("div.team-card"):
+        team_el = card.select_one("span.team-name")
+        team_name = team_el.get_text(strip=True) if team_el else None
+        if not team_name:
+            continue
+        for li in card.select("ul.unstyled > li"):
+            name_el = li.select_one("strong.item-name")
+            desc_el = li.select_one("div.item-description")
+            if name_el and desc_el:
+                result.append({
+                    "team_name": team_name,
+                    "player_name": name_el.get_text(strip=True),
+                    "description": desc_el.get_text(strip=True),
+                })
+
+    return result

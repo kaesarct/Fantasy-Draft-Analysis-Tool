@@ -30,6 +30,7 @@ def init_db():
         season,
         competition,
         injury,
+        serie_a_injury,
         lineup,
         lineup_import,
         season_data,

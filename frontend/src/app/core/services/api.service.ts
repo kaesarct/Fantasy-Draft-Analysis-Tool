@@ -139,6 +139,19 @@ export class ApiService {
     return this.http.post(`${this.base}/injuries/check-recovery`, null, { params });
   }
 
+  // ── Infortunati Serie A (fantacalcio.it) ────────────────────
+  syncSerieAInjuries(): Observable<any> {
+    return this.http.post(`${this.base}/serie-a-injuries/sync`, null);
+  }
+
+  getSerieAInjuries(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/serie-a-injuries`);
+  }
+
+  getSerieAInjuryArchive(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/serie-a-injuries/archive`);
+  }
+
   // ── Sync ───────────────────────────────────────────────────
   syncPrices(seasonId: number): Observable<any> {
     return this.http.post(`${this.base}/sync/prices`, null, {

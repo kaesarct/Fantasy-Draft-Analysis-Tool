@@ -14,6 +14,9 @@ from app.models.competition import (  # noqa
     MatchResult, CompetitionStanding,
 )
 from app.models.injury import InjuryPlayer  # noqa
+from app.models.serie_a_injury import (  # noqa
+    SerieAInjuryReport, SerieAInjuryArchive, SerieAInjuryDescription,
+)
 from app.models.lineup import LineupSubmission, LineupPlayer  # noqa
 from app.models.lineup_import import LineupRawImport  # noqa
 from app.models.season_data import ImportedSeasonData, PlayerSeasonStat, PlayerSeasonPrice  # noqa

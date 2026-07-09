@@ -102,6 +102,75 @@ import { ApiService } from '../../core/services/api.service';
         </div>
       }
 
+      <div class="section-title">🩺 Infortunati Serie A (ufficiale fantacalcio.it)</div>
+      <div class="actions-bar mb-3">
+        <button pButton label="🔄 Sincronizza" size="small" [loading]="syncingSerieA()" (click)="syncSerieA()"></button>
+        <button
+          pButton
+          [label]="showSerieAArchive ? 'Nascondi rientrati' : 'Mostra rientrati'"
+          size="small"
+          class="p-button-outlined"
+          (click)="toggleSerieAArchive()"
+        ></button>
+      </div>
+
+      @if (loadingSerieA()) {
+        <p-skeleton height="60px" styleClass="mb-2" />
+      } @else {
+        <div class="seriea-groups mb-4">
+          @for (group of serieAGrouped(); track group.team_name) {
+            <div class="seriea-team-group">
+              <div class="seriea-team-name">{{ group.team_name }}</div>
+              @for (p of group.players; track p.id) {
+                <div class="seriea-player-row">
+                  <div class="seriea-player-main">
+                    <span class="inj-name">
+                      {{ p.player_name }}
+                      @if (p.player_id) { <span class="badge badge-green" style="margin-left:6px;">collegato</span> }
+                    </span>
+                    <span class="text-muted" style="font-size:12px">dal {{ p.first_seen_at | date:'dd/MM/yyyy' }}</span>
+                  </div>
+                  <p class="seriea-desc text-muted">{{ p.description }}</p>
+                  @if (p.descriptions.length > 1) {
+                    <button class="seriea-history-toggle" (click)="toggleSerieAExpanded(p.id)">
+                      {{ expandedSerieA().has(p.id) ? 'Nascondi storico' : 'Mostra storico (' + p.descriptions.length + ')' }}
+                    </button>
+                  }
+                  @if (expandedSerieA().has(p.id)) {
+                    <div class="seriea-history">
+                      @for (h of p.descriptions; track h.recorded_at) {
+                        <div class="seriea-history-row">
+                          <span class="text-muted" style="font-size:11px">{{ h.recorded_at | date:'dd/MM/yyyy HH:mm' }}</span>
+                          <span style="font-size:12px">{{ h.description }}</span>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+          @empty {
+            <p class="text-muted">Nessun infortunato Serie A sincronizzato. Premi "Sincronizza".</p>
+          }
+        </div>
+
+        @if (showSerieAArchive) {
+          <div class="section-title">Rientrati (Serie A)</div>
+          <div class="returned-list">
+            @for (a of serieAArchive(); track a.id) {
+              <div class="returned-row">
+                <span class="inj-name">{{ a.player_name }} <span class="text-muted">({{ a.team_name }})</span></span>
+                <span class="text-muted">{{ a.started_at | date:'dd/MM/yyyy' }} → {{ a.ended_at | date:'dd/MM/yyyy' }}</span>
+              </div>
+            }
+            @empty {
+              <p class="text-muted">Nessun rientro registrato.</p>
+            }
+          </div>
+        }
+      }
+
       <p-dialog
         header="Inserisci infortunato"
         [(visible)]="addModalVisible"
@@ -186,6 +255,25 @@ import { ApiService } from '../../core/services/api.service';
     }
     .player-result:hover:not(:disabled) { border-color: var(--accent-blue); }
     .player-result:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .mb-3 { margin-bottom: 16px; }
+
+    .seriea-groups { display: flex; flex-direction: column; gap: 14px; }
+    .seriea-team-group {
+      background: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: var(--radius-md); padding: 14px 18px;
+    }
+    .seriea-team-name { font-weight: 800; font-size: 13px; margin-bottom: 10px; letter-spacing: .02em; }
+    .seriea-player-row { padding: 8px 0; border-top: 1px solid var(--border-subtle); }
+    .seriea-player-row:first-of-type { border-top: none; padding-top: 0; }
+    .seriea-player-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+    .seriea-desc { font-size: 13px; margin: 0 0 6px; line-height: 1.4; }
+    .seriea-history-toggle {
+      background: none; border: none; cursor: pointer; padding: 0;
+      font-size: 12px; font-weight: 600; color: var(--accent-blue);
+    }
+    .seriea-history { margin-top: 8px; padding: 8px 12px; background: var(--bg-elevated); border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 6px; }
+    .seriea-history-row { display: flex; gap: 10px; align-items: baseline; }
   `],
 })
 export class InjuriesComponent implements OnInit {
@@ -208,6 +296,24 @@ export class InjuriesComponent implements OnInit {
       .sort((a, b) => (b.confirmed_return ?? '').localeCompare(a.confirmed_return ?? ''))
   );
 
+  serieAInjuries = signal<any[]>([]);
+  serieAArchive = signal<any[]>([]);
+  loadingSerieA = signal(true);
+  syncingSerieA = signal(false);
+  showSerieAArchive = false;
+  expandedSerieA = signal<Set<number>>(new Set());
+
+  serieAGrouped = computed(() => {
+    const groups = new Map<string, any[]>();
+    for (const p of this.serieAInjuries()) {
+      if (!groups.has(p.team_name)) groups.set(p.team_name, []);
+      groups.get(p.team_name)!.push(p);
+    }
+    return Array.from(groups.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([team_name, players]) => ({ team_name, players }));
+  });
+
   constructor(
     private api: ApiService,
     private confirm: ConfirmationService,
@@ -222,6 +328,57 @@ export class InjuriesComponent implements OnInit {
         this.loadInjuries();
       },
       error: () => this.loadInjuries(),
+    });
+    this.loadSerieAInjuries();
+  }
+
+  loadSerieAInjuries() {
+    this.loadingSerieA.set(true);
+    this.api.getSerieAInjuries().subscribe({
+      next: data => { this.serieAInjuries.set(data); this.loadingSerieA.set(false); },
+      error: () => this.loadingSerieA.set(false),
+    });
+  }
+
+  loadSerieAArchive() {
+    this.api.getSerieAInjuryArchive().subscribe({ next: data => this.serieAArchive.set(data) });
+  }
+
+  toggleSerieAArchive() {
+    this.showSerieAArchive = !this.showSerieAArchive;
+    if (this.showSerieAArchive && this.serieAArchive().length === 0) {
+      this.loadSerieAArchive();
+    }
+  }
+
+  toggleSerieAExpanded(id: number) {
+    const set = new Set(this.expandedSerieA());
+    if (set.has(id)) set.delete(id); else set.add(id);
+    this.expandedSerieA.set(set);
+  }
+
+  syncSerieA() {
+    this.syncingSerieA.set(true);
+    this.api.syncSerieAInjuries().subscribe({
+      next: res => {
+        this.syncingSerieA.set(false);
+        if (res.ok) {
+          this.toast.add({
+            severity: 'success',
+            summary: 'Sincronizzazione completata',
+            detail: `${res.created} nuovi, ${res.updated} aggiornati, ${res.archived} rientrati.`,
+          });
+          this.loadSerieAInjuries();
+          if (this.showSerieAArchive) this.loadSerieAArchive();
+        } else {
+          this.toast.add({ severity: 'warn', summary: 'Attenzione', detail: res.message || 'Sync fallito.' });
+        }
+      },
+      error: err => {
+        this.syncingSerieA.set(false);
+        const detail = err.error?.detail ?? 'Errore durante la sincronizzazione.';
+        this.toast.add({ severity: 'error', summary: 'Errore', detail });
+      },
     });
   }
 
