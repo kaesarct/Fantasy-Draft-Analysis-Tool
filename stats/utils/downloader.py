@@ -14,8 +14,8 @@ class FantaDownloader:
         if task_id:
             self.task = ImportTask.objects.filter(id=task_id).first()
             
-        self.base_url = os.environ.get("BASE_URL", "https://api.fantacalcio.it/")
-        self.base_api = os.environ.get("BASE_API", "v1/")
+        self.base_url = os.environ.get("BASE_URL", "https://www.fantacalcio.it/")
+        self.base_api = os.environ.get("BASE_API", "api/v1/")
         self.url_api = f"{self.base_url}{self.base_api}"
         self.username = os.environ.get("FANTA_USERNAME", "")
         self.password = os.environ.get("FANTA_PASSWORD", "")

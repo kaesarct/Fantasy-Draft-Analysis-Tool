@@ -2,6 +2,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debugger Python: File corrente",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Python: Django Runserver",
             "type": "python",
             "request": "launch",
@@ -11,6 +18,6 @@
             ],
             "django": true,
             "justMyCode": true
-        }
+        },
     ]
 }

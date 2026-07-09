@@ -38,3 +38,7 @@ __pycache__
 
 dati_scaricati
 *.log
+
+# Captured network logs / browser sessions may contain credentials/session tokens
+network_log*.json
+tamarros_session.json
