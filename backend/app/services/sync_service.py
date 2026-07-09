@@ -84,6 +84,11 @@ def sync_votes(db: Session, season_id: int, match_day: int | None = None) -> dic
         return {"ok": False, "message": "Download votes failed"}
 
     df = pd.read_excel(path, skiprows=4)
+    if df.shape[1] == 0:
+        # Nessuna giornata giocata ancora (es. stagione non iniziata): l'API
+        # risponde 200 OK con un Excel senza dati utilizzabili.
+        return {"ok": False, "message": f"Nessun voto disponibile per la giornata {day}"}
+
     # Solo righe con ID numerico
     df = df[df.iloc[:, 0].astype(str).str.isdigit()]
 
