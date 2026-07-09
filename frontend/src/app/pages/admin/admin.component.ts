@@ -22,6 +22,47 @@ import { ApiService } from '../../core/services/api.service';
         <div class="card mb-4 status-msg" [class.error]="messageIsError()">{{ message() }}</div>
       }
 
+      <!-- Stagione e sincronizzazione -->
+      <div class="section-title">🗓️ Stagione e sincronizzazione</div>
+      <div class="card mb-4 sync-panel">
+        <div class="sync-row">
+          <p-dropdown
+            [options]="seasonOptions()"
+            [(ngModel)]="syncSeasonId"
+            placeholder="Stagione"
+            styleClass="filter-drop"
+          />
+          <span class="text-muted" style="font-size:12px">
+            Corrente: {{ currentSeasonLabel() ?? 'nessuna' }}
+          </span>
+          <button
+            pButton
+            label="Imposta come corrente"
+            size="small"
+            class="p-button-outlined"
+            [disabled]="!syncSeasonId"
+            [loading]="settingCurrent()"
+            (click)="setCurrentSeason()"
+          ></button>
+        </div>
+        <div class="sync-row">
+          <input
+            pInputText
+            type="number"
+            placeholder="Giornata (vuoto = auto)"
+            [(ngModel)]="syncMatchDay"
+            class="matchday-input"
+          />
+          <button pButton label="Sync quotazioni" size="small" [disabled]="!syncSeasonId" [loading]="syncingPrices()" (click)="runSyncPrices()"></button>
+          <button pButton label="Sync voti" size="small" [disabled]="!syncSeasonId" [loading]="syncingVotes()" (click)="runSyncVotes()"></button>
+          <button pButton label="Verifica recupero" size="small" [disabled]="!syncSeasonId" [loading]="checkingRecovery()" (click)="runCheckRecovery()"></button>
+        </div>
+        <p class="text-muted" style="font-size:12px; margin: 0;">
+          La giornata viene stimata automaticamente da fantacalcio.it e a inizio stagione può risultare 0 (nessuna giornata giocata):
+          se una sincronizzazione fallisce, indicala qui manualmente.
+        </p>
+      </div>
+
       <!-- Allenatori -->
       <div class="section-title">👤 Allenatori</div>
       <div class="card mb-4 coach-panel">
@@ -138,6 +179,10 @@ import { ApiService } from '../../core/services/api.service';
     .filters-bar { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
     .filter-drop { min-width: 160px; }
 
+    .sync-panel { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .sync-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .matchday-input { width: 170px; }
+
     .team-table { padding: 0; overflow: visible; }
     .team-row {
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
@@ -168,8 +213,13 @@ import { ApiService } from '../../core/services/api.service';
 export class AdminComponent implements OnInit {
   allenatori = signal<any[]>([]);
   seasonOptions = signal<any[]>([]);
+  currentSeasonLabel = signal<string | null>(null);
   teams = signal<any[]>([]);
   creating = signal(false);
+  settingCurrent = signal(false);
+  syncingPrices = signal(false);
+  syncingVotes = signal(false);
+  checkingRecovery = signal(false);
   message = signal('');
   messageIsError = signal(false);
 
@@ -177,13 +227,98 @@ export class AdminComponent implements OnInit {
   newDisplayName = '';
   newEmail = '';
   selectedSeasonId: number | null = null;
+  syncSeasonId: number | null = null;
+  syncMatchDay: number | null = null;
 
   constructor(private api: ApiService) {}
 
   ngOnInit() {
     this.loadAllenatori();
+    this.loadSeasons();
+  }
+
+  loadSeasons() {
     this.api.getSeasons().subscribe({
-      next: seasons => this.seasonOptions.set(seasons.map(s => ({ label: s.label, value: s.id }))),
+      next: seasons => {
+        this.seasonOptions.set(seasons.map(s => ({ label: s.label, value: s.id })));
+        const current = seasons.find(s => s.is_current);
+        this.currentSeasonLabel.set(current ? current.label : null);
+      },
+    });
+  }
+
+  setCurrentSeason() {
+    if (!this.syncSeasonId) return;
+    this.settingCurrent.set(true);
+    this.api.setCurrentSeason(this.syncSeasonId).subscribe({
+      next: res => {
+        this.settingCurrent.set(false);
+        this.setMessage(`Stagione corrente impostata su "${res.label}".`, false);
+        this.loadSeasons();
+      },
+      error: err => {
+        this.settingCurrent.set(false);
+        this.setMessage(err.error?.detail || 'Errore impostazione stagione corrente.', true);
+      },
+    });
+  }
+
+  runSyncPrices() {
+    if (!this.syncSeasonId) return;
+    this.syncingPrices.set(true);
+    this.api.syncPrices(this.syncSeasonId).subscribe({
+      next: res => {
+        this.syncingPrices.set(false);
+        if (res.ok) {
+          this.setMessage(`Quotazioni: ${res.created} nuovi, ${res.updated} aggiornati (giornata ${res.match_day}).`, false);
+        } else {
+          this.setMessage(res.message || 'Sync quotazioni fallito.', true);
+        }
+      },
+      error: err => {
+        this.syncingPrices.set(false);
+        this.setMessage(err.error?.detail || 'Errore durante il sync quotazioni.', true);
+      },
+    });
+  }
+
+  runSyncVotes() {
+    if (!this.syncSeasonId) return;
+    this.syncingVotes.set(true);
+    this.api.syncVotes(this.syncSeasonId, this.syncMatchDay ?? undefined).subscribe({
+      next: res => {
+        this.syncingVotes.set(false);
+        if (res.ok) {
+          this.setMessage(`Voti: ${res.saved} salvati (giornata ${res.match_day}).`, false);
+        } else {
+          this.setMessage(res.message || 'Sync voti fallito.', true);
+        }
+      },
+      error: err => {
+        this.syncingVotes.set(false);
+        this.setMessage(err.error?.detail || 'Errore durante il sync voti.', true);
+      },
+    });
+  }
+
+  runCheckRecovery() {
+    if (!this.syncSeasonId) return;
+    this.checkingRecovery.set(true);
+    this.api.checkInjuryRecovery(this.syncSeasonId, this.syncMatchDay ?? undefined).subscribe({
+      next: res => {
+        this.checkingRecovery.set(false);
+        const names = res.returned?.map((p: any) => p.player_name).join(', ');
+        this.setMessage(
+          res.returned?.length
+            ? `Giornata ${res.match_day} — rientrati: ${names}.`
+            : `Giornata ${res.match_day} — nessun rientro.`,
+          false,
+        );
+      },
+      error: err => {
+        this.checkingRecovery.set(false);
+        this.setMessage(err.error?.detail || 'Errore durante la verifica dei recuperi.', true);
+      },
     });
   }
 

@@ -1,5 +1,5 @@
 """Injuries router."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import date
@@ -80,8 +80,8 @@ def mark_recovered(injury_id: int, confirmed_return: date, db: Session = Depends
 
 
 @router.post("/check-recovery")
-def check_recovery(season_id: int, db: Session = Depends(get_db)):
-    day = fanta_client.get_last_matchday()
+def check_recovery(season_id: int, match_day: int | None = Query(None), db: Session = Depends(get_db)):
+    day = match_day if match_day is not None else fanta_client.get_last_matchday()
     if day < 0:
         raise HTTPException(502, "Impossibile determinare l'ultima giornata da fantacalcio.it")
 

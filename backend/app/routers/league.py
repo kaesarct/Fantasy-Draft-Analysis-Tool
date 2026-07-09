@@ -1,5 +1,5 @@
 """League, standings and competitions router."""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
@@ -19,6 +19,17 @@ def list_seasons(db: Session = Depends(get_db)):
          "year_end": s.year_end, "is_current": s.is_current}
         for s in seasons
     ]
+
+
+@seasons_router.patch("/{season_id}/set-current")
+def set_current_season(season_id: int, db: Session = Depends(get_db)):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+    db.query(Season).filter(Season.is_current == True).update({"is_current": False})
+    season.is_current = True
+    db.commit()
+    return {"ok": True, "id": season.id, "label": season.label}
 
 
 @seasons_router.get("/{season_id}/competitions")

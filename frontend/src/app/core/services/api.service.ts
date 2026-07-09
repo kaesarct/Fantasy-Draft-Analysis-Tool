@@ -80,6 +80,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/seasons`);
   }
 
+  setCurrentSeason(seasonId: number): Observable<any> {
+    return this.http.patch(`${this.base}/seasons/${seasonId}/set-current`, null);
+  }
+
   getSeasonCompetitions(seasonId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/seasons/${seasonId}/competitions`);
   }
@@ -129,10 +133,10 @@ export class ApiService {
     return this.http.delete(`${this.base}/injuries/${id}`);
   }
 
-  checkInjuryRecovery(seasonId: number): Observable<any> {
-    return this.http.post(`${this.base}/injuries/check-recovery`, null, {
-      params: new HttpParams().set('season_id', seasonId),
-    });
+  checkInjuryRecovery(seasonId: number, matchDay?: number): Observable<any> {
+    let params = new HttpParams().set('season_id', seasonId);
+    if (matchDay !== undefined && matchDay !== null) params = params.set('match_day', matchDay);
+    return this.http.post(`${this.base}/injuries/check-recovery`, null, { params });
   }
 
   // ── Sync ───────────────────────────────────────────────────
