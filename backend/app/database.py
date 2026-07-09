@@ -38,6 +38,7 @@ def init_db():
     )
     Base.metadata.create_all(bind=engine)
     _migrate_add_leghe_id()
+    _migrate_widen_secondary_role()
 
 
 def _migrate_add_leghe_id():
@@ -47,4 +48,15 @@ def _migrate_add_leghe_id():
     with engine.begin() as conn:
         conn.execute(text(
             "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS leghe_id INTEGER"
+        ))
+
+
+def _migrate_widen_secondary_role():
+    # create_all non altera tabelle esistenti: il campo puo' contenere una lista
+    # di ruoli Mantra separata da ";" (es. "B;Dd;E"), va allargata a mano sui DB
+    # gia' creati con il VARCHAR(2) originale.
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE players ALTER COLUMN secondary_role TYPE VARCHAR(50)"
         ))

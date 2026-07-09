@@ -38,12 +38,14 @@ cd ft-platform
 
 ### 2. Configura l'ambiente
 
-Copia il file `.env.example` all'interno della cartella backend e configuralo con le tue credenziali di fantacalcio.it.
+Docker Compose legge le variabili dal file `.env` nella **root** del progetto (non da `backend/.env`, che serve solo per l'esecuzione locale senza Docker — vedi sotto).
 
 ```bash
-cp backend/.env.example backend/.env
-# Apri backend/.env e inserisci FANTA_USERNAME, FANTA_PASSWORD, ecc.
+cp .env.example .env
+# Apri .env e inserisci FANTA_USERNAME, FANTA_PASSWORD, FANTA_YEAR_QUOTAZIONI, ecc.
 ```
+
+> Un `FANTA_YEAR_QUOTAZIONI` sbagliato (es. una stagione futura non ancora pubblicata da fantacalcio.it) non da' errore: l'API risponde 200 OK ma con un Excel vuoto, e la sincronizzazione fallisce silenziosamente con "Download failed".
 
 ### 3. Avvia i servizi
 

@@ -11,7 +11,7 @@ class Player(Base):
     fanta_id = Column(Integer, unique=True, nullable=True)   # ID su fantacalcio.it
     name = Column(String(150), nullable=False, index=True)
     role = Column(String(2), nullable=False)                 # P, D, C, A
-    secondary_role = Column(String(2), nullable=True)
+    secondary_role = Column(String(50), nullable=True)  # ruoli Mantra, lista separata da ";" es. "B;Dd;E"
     serie_a_team_id = Column(Integer, ForeignKey("serie_a_teams.id"), nullable=True)
 
     serie_a_team = relationship("SerieATeam", back_populates="players")

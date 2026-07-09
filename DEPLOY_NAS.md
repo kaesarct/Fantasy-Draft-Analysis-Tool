@@ -110,23 +110,15 @@ a mano sul NAS.
 
 - `backend/.env` — copia da `backend/.env.example` e compila con le credenziali
   reali di fantacalcio.it e del database (usa gli stessi valori di `DB_USER` /
-  `DB_PASSWORD` / `DB_NAME` che metterai nel passo successivo).
-- `.env` nella root — usato da `docker-compose.prod.yml` per parametrizzare le
-  credenziali Postgres. Esempio:
+  `DB_PASSWORD` / `DB_NAME` che metterai nel passo successivo). Usato solo se
+  esegui il backend senza Docker: `docker-compose.prod.yml` non lo legge.
+- `.env` nella root — copia da `.env.example` (vedi anche il commento sulla
+  formula di `FANTA_YEAR_QUOTAZIONI` nel file stesso) e compila con i valori
+  reali. `docker-compose.prod.yml` legge **solo** questo file per Postgres,
+  fantacalcio.it e CORS.
 
-  ```env
-  DB_USER=ft_user
-  DB_PASSWORD=<password-forte-generata-ora>
-  DB_NAME=ft_platform
-  FANTA_USERNAME=<email fantacalcio.it>
-  FANTA_PASSWORD=<password fantacalcio.it>
-  FANTA_YEAR_QUOTAZIONI=24
-  FANTA_LEGA_NAME=fantacalcio-tamarros
-  CORS_ORIGINS=["https://tuonome.synology.me"]
-  ```
-
-  Genera una password forte, ad es. `openssl rand -base64 24`, invece di
-  riusare `ft_password`.
+  Genera una password Postgres forte, ad es. `openssl rand -base64 24`, invece
+  di riusare `ft_password`.
 
 Copia questi due `.env` sul NAS via SCP/SFTP (mai via Git):
 
