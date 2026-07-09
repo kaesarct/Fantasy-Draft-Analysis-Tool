@@ -112,6 +112,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/matches`);
   }
 
+  getLastMatchday(): Observable<{ match_day: number }> {
+    return this.http.get<{ match_day: number }>(`${this.base}/matches/last-matchday`);
+  }
+
   // ── Injuries ───────────────────────────────────────────────
   getInjuries(seasonId?: number, activeOnly: boolean = true): Observable<any[]> {
     let params = new HttpParams().set('active_only', activeOnly);

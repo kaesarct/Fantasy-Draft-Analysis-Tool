@@ -134,9 +134,17 @@ def sync_votes(db: Session, season_id: int, match_day: int | None = None) -> dic
 
 
 def _match_player_id(db: Session, player_name: str) -> int | None:
-    """Match esatto case-insensitive su Player.name; None se 0 o >1 risultati."""
+    """Match esatto case-insensitive su Player.name. Se ambiguo (es. una riga
+    storica senza fanta_id e una reale dall'ultima sincronizzazione quotazioni),
+    preferisce l'unica con fanta_id impostato; altrimenti None (niente scelte
+    arbitrarie tra piu' giocatori realmente distinti)."""
     matches = db.query(Player).filter(Player.name.ilike(player_name)).all()
-    return matches[0].id if len(matches) == 1 else None
+    if len(matches) == 1:
+        return matches[0].id
+    with_fanta_id = [p for p in matches if p.fanta_id is not None]
+    if len(with_fanta_id) == 1:
+        return with_fanta_id[0].id
+    return None
 
 
 def sync_serie_a_injuries(db: Session) -> dict:
@@ -203,6 +211,11 @@ def sync_serie_a_injuries(db: Session) -> dict:
         else:
             report.last_seen_at = now
             unchanged += 1
+
+        # Ritenta il collegamento se non risolto in precedenza (es. il match
+        # e' diventato univoco dopo una sincronizzazione quotazioni piu' recente).
+        if report.player_id is None:
+            report.player_id = _match_player_id(db, report.player_name)
 
     db.commit()
     return {"ok": True, "created": created, "updated": updated, "unchanged": unchanged, "archived": archived}

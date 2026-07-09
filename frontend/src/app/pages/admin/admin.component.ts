@@ -32,18 +32,22 @@ import { ApiService } from '../../core/services/api.service';
             placeholder="Stagione"
             styleClass="filter-drop"
           />
-          <span class="text-muted" style="font-size:12px">
-            Corrente: {{ currentSeasonLabel() ?? 'nessuna' }}
-          </span>
-          <button
-            pButton
-            label="Imposta come corrente"
-            size="small"
-            class="p-button-outlined"
-            [disabled]="!syncSeasonId"
-            [loading]="settingCurrent()"
-            (click)="setCurrentSeason()"
-          ></button>
+          @if (syncSeasonId && syncSeasonId === currentSeasonId()) {
+            <span class="badge badge-green">✓ è la stagione corrente</span>
+          } @else {
+            <span class="text-muted" style="font-size:12px">
+              Corrente: {{ currentSeasonLabel() ?? 'nessuna' }}
+            </span>
+            <button
+              pButton
+              label="Imposta come corrente"
+              size="small"
+              class="p-button-outlined"
+              [disabled]="!syncSeasonId"
+              [loading]="settingCurrent()"
+              (click)="setCurrentSeason()"
+            ></button>
+          }
         </div>
         <div class="sync-row">
           <input
@@ -53,13 +57,19 @@ import { ApiService } from '../../core/services/api.service';
             [(ngModel)]="syncMatchDay"
             class="matchday-input"
           />
+          <span class="text-muted" style="font-size:12px">
+            Rilevata automaticamente da fantacalcio.it: <strong>{{ detectedMatchDay() ?? '…' }}</strong>
+            <button class="refresh-btn" title="Aggiorna" (click)="loadDetectedMatchday()">🔄</button>
+          </span>
+        </div>
+        <div class="sync-row">
           <button pButton label="Sync quotazioni" size="small" [disabled]="!syncSeasonId" [loading]="syncingPrices()" (click)="runSyncPrices()"></button>
           <button pButton label="Sync voti" size="small" [disabled]="!syncSeasonId" [loading]="syncingVotes()" (click)="runSyncVotes()"></button>
           <button pButton label="Verifica recupero" size="small" [disabled]="!syncSeasonId" [loading]="checkingRecovery()" (click)="runCheckRecovery()"></button>
         </div>
         <p class="text-muted" style="font-size:12px; margin: 0;">
-          La giornata viene stimata automaticamente da fantacalcio.it e a inizio stagione può risultare 0 (nessuna giornata giocata):
-          se una sincronizzazione fallisce, indicala qui manualmente.
+          Il campo "Giornata" è vuoto per default: se lo lasci vuoto viene usata la giornata rilevata automaticamente (mostrata sopra).
+          A inizio stagione può risultare 0 (nessuna giornata ancora giocata): se una sincronizzazione fallisce, inseriscila qui a mano.
         </p>
       </div>
 
@@ -182,6 +192,7 @@ import { ApiService } from '../../core/services/api.service';
     .sync-panel { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
     .sync-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .matchday-input { width: 170px; }
+    .refresh-btn { background: none; border: none; cursor: pointer; padding: 0 0 0 4px; font-size: 12px; }
 
     .team-table { padding: 0; overflow: visible; }
     .team-row {
@@ -213,7 +224,9 @@ import { ApiService } from '../../core/services/api.service';
 export class AdminComponent implements OnInit {
   allenatori = signal<any[]>([]);
   seasonOptions = signal<any[]>([]);
+  currentSeasonId = signal<number | null>(null);
   currentSeasonLabel = signal<string | null>(null);
+  detectedMatchDay = signal<number | null>(null);
   teams = signal<any[]>([]);
   creating = signal(false);
   settingCurrent = signal(false);
@@ -235,6 +248,7 @@ export class AdminComponent implements OnInit {
   ngOnInit() {
     this.loadAllenatori();
     this.loadSeasons();
+    this.loadDetectedMatchday();
   }
 
   loadSeasons() {
@@ -242,8 +256,19 @@ export class AdminComponent implements OnInit {
       next: seasons => {
         this.seasonOptions.set(seasons.map(s => ({ label: s.label, value: s.id })));
         const current = seasons.find(s => s.is_current);
+        this.currentSeasonId.set(current ? current.id : null);
         this.currentSeasonLabel.set(current ? current.label : null);
+        if (!this.syncSeasonId && current) {
+          this.syncSeasonId = current.id;
+        }
       },
+    });
+  }
+
+  loadDetectedMatchday() {
+    this.api.getLastMatchday().subscribe({
+      next: res => this.detectedMatchDay.set(res.match_day),
+      error: () => this.detectedMatchDay.set(null),
     });
   }
 
