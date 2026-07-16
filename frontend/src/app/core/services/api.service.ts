@@ -189,10 +189,15 @@ export class ApiService {
   }
 
   // ── History (storico stagioni) ─────────────────────────────
-  importSeasonHistory(seasonId: number, dataType: 'stats' | 'prices' | 'votes', force = false): Observable<any> {
-    return this.http.post(`${this.base}/history/seasons/${seasonId}/import`, null, {
-      params: new HttpParams().set('data_type', dataType).set('force', force),
-    });
+  importSeasonHistory(
+    seasonId: number,
+    dataType: 'stats' | 'prices' | 'votes',
+    force = false,
+    matchDay?: number | null,
+  ): Observable<any> {
+    let params = new HttpParams().set('data_type', dataType).set('force', force);
+    if (matchDay !== undefined && matchDay !== null) params = params.set('match_day', matchDay);
+    return this.http.post(`${this.base}/history/seasons/${seasonId}/import`, null, { params });
   }
 
   getSeasonStats(seasonId: number, search?: string): Observable<any[]> {
@@ -205,10 +210,6 @@ export class ApiService {
     let params = new HttpParams();
     if (search) params = params.set('search', search);
     return this.http.get<any[]>(`${this.base}/history/seasons/${seasonId}/prices`, { params });
-  }
-
-  getSeasonVotesMatchdays(seasonId: number): Observable<number[]> {
-    return this.http.get<number[]>(`${this.base}/history/seasons/${seasonId}/votes/matchdays`);
   }
 
   getSeasonVotes(seasonId: number, matchDay?: number | null, search?: string): Observable<any[]> {

@@ -229,12 +229,65 @@ def _parse_votes_dataframe(file_path: str) -> list[dict]:
     return rows
 
 
-def import_season_votes(db: Session, season_id: int, force: bool = False) -> dict:
-    """Come import_season_data, ma i voti sono pubblicati per giornata: cicla
-    fino a MAX_MATCH_DAY download separati, saltando le giornate senza dati."""
+def _import_votes_matchday(db: Session, season_id: int, season_code: int, match_day: int, tmp_dir: str) -> int | None:
+    """Scarica+parsa+upserta una singola giornata. Ritorna il numero di righe
+    importate, o None se il download/parsing non ha prodotto dati utilizzabili."""
+    file_path = fanta_client.download_votes_excel(season_code, match_day, tmp_dir)
+    if not file_path:
+        return None
+
+    try:
+        rows = _parse_votes_dataframe(file_path)
+    except Exception as e:
+        db.rollback()
+        logger.error("Errore parsing voti giornata %s stagione_id %s: %s", match_day, season_id, e)
+        return None
+
+    if not rows:
+        return None
+
+    for row in rows:
+        record = (
+            db.query(PlayerSeasonVote)
+            .filter(
+                PlayerSeasonVote.season_id == season_id,
+                PlayerSeasonVote.fanta_player_id == row["fanta_player_id"],
+                PlayerSeasonVote.match_day == match_day,
+            )
+            .first()
+        )
+        if not record:
+            db.add(PlayerSeasonVote(season_id=season_id, match_day=match_day, **row))
+            db.flush()
+        else:
+            for field, value in row.items():
+                if field != "fanta_player_id":
+                    setattr(record, field, value)
+    return len(rows)
+
+
+def import_season_votes(db: Session, season_id: int, force: bool = False, match_day: int | None = None) -> dict:
+    """Come import_season_data, ma i voti sono pubblicati per giornata.
+
+    Con match_day valorizzato importa solo quella giornata (azione mirata:
+    bypassa il cache-check "gia' importato", che riguarda l'intera stagione).
+    Senza match_day cicla fino a MAX_MATCH_DAY download separati, saltando
+    le giornate senza dati, e marca l'intera stagione come importata."""
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
         return {"ok": False, "message": f"Stagione {season_id} non trovata"}
+
+    season_code = season.year_start - SEASON_BASE_YEAR
+
+    if match_day is not None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            rows = _import_votes_matchday(db, season_id, season_code, match_day, tmp_dir)
+        if not rows:
+            db.rollback()
+            return {"ok": False, "message": f"Nessun dato voti trovato per la giornata {match_day}"}
+        db.commit()
+        logger.info("Importate %s righe voti per stagione %s giornata %s", rows, season.label, match_day)
+        return {"ok": True, "imported": True, "rows": rows, "season": season.label, "match_day": match_day}
 
     already = (
         db.query(ImportedSeasonData)
@@ -247,49 +300,16 @@ def import_season_votes(db: Session, season_id: int, force: bool = False) -> dic
     if already and not force:
         return {"ok": True, "imported": False, "message": "Dati gia' importati (usa force per reimportare)"}
 
-    season_code = season.year_start - SEASON_BASE_YEAR
     total_rows = 0
     skipped_match_days = []
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        for match_day in range(1, MAX_MATCH_DAY + 1):
-            file_path = fanta_client.download_votes_excel(season_code, match_day, tmp_dir)
-            if not file_path:
-                skipped_match_days.append(match_day)
-                continue
-
-            try:
-                rows = _parse_votes_dataframe(file_path)
-            except Exception as e:
-                db.rollback()
-                logger.error(
-                    "Errore parsing voti giornata %s stagione %s: %s", match_day, season.label, e
-                )
-                skipped_match_days.append(match_day)
-                continue
-
+        for day in range(1, MAX_MATCH_DAY + 1):
+            rows = _import_votes_matchday(db, season_id, season_code, day, tmp_dir)
             if not rows:
-                skipped_match_days.append(match_day)
+                skipped_match_days.append(day)
                 continue
-
-            for row in rows:
-                record = (
-                    db.query(PlayerSeasonVote)
-                    .filter(
-                        PlayerSeasonVote.season_id == season_id,
-                        PlayerSeasonVote.fanta_player_id == row["fanta_player_id"],
-                        PlayerSeasonVote.match_day == match_day,
-                    )
-                    .first()
-                )
-                if not record:
-                    db.add(PlayerSeasonVote(season_id=season_id, match_day=match_day, **row))
-                    db.flush()
-                else:
-                    for field, value in row.items():
-                        if field != "fanta_player_id":
-                            setattr(record, field, value)
-            total_rows += len(rows)
+            total_rows += rows
 
     if total_rows == 0:
         db.rollback()

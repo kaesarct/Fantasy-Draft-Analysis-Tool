@@ -24,28 +24,17 @@ def import_season(
     season_id: int,
     data_type: str = Query(..., description="'stats', 'prices' o 'votes'"),
     force: bool = Query(False),
+    match_day: int | None = Query(None, ge=1, le=38, description="Solo per data_type='votes': importa una singola giornata"),
     db: Session = Depends(get_db),
     _admin: str = Depends(require_admin),
 ):
     if data_type == "votes":
-        result = import_season_votes(db, season_id, force)
+        result = import_season_votes(db, season_id, force, match_day)
     else:
         result = import_season_data(db, season_id, _validate_data_type(data_type), force)
     if not result["ok"]:
         raise HTTPException(status_code=502, detail=result["message"])
     return result
-
-
-@router.get("/seasons/{season_id}/votes/matchdays")
-def get_season_votes_matchdays(season_id: int, db: Session = Depends(get_db)):
-    rows = (
-        db.query(PlayerSeasonVote.match_day)
-        .filter(PlayerSeasonVote.season_id == season_id)
-        .distinct()
-        .order_by(PlayerSeasonVote.match_day)
-        .all()
-    )
-    return [r[0] for r in rows]
 
 
 @router.get("/seasons/{season_id}/votes")

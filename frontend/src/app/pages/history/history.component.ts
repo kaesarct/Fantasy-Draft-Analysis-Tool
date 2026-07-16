@@ -67,12 +67,12 @@ const VOTES_COLUMNS = [
         <p-dropdown
           [options]="dataTypeOptions"
           [(ngModel)]="dataType"
-          (ngModelChange)="onDataTypeChange()"
+          (ngModelChange)="loadData()"
           styleClass="filter-drop"
         />
         @if (dataType === 'votes') {
           <p-dropdown
-            [options]="matchDayOptions()"
+            [options]="matchDayOptions"
             [(ngModel)]="selectedMatchDay"
             (ngModelChange)="loadData()"
             styleClass="filter-drop"
@@ -222,7 +222,10 @@ export class HistoryComponent implements OnInit {
   messageIsError = signal(false);
   columns = signal(STATS_COLUMNS);
 
-  matchDayOptions = signal<{ label: string; value: number | null }[]>([]);
+  matchDayOptions: { label: string; value: number | null }[] = [
+    { label: 'Tutte le giornate', value: null },
+    ...Array.from({ length: 38 }, (_, i) => ({ label: `Giornata ${i + 1}`, value: i + 1 })),
+  ];
 
   selectedSeasonId: number | null = null;
   selectedMatchDay: number | null = null;
@@ -245,34 +248,8 @@ export class HistoryComponent implements OnInit {
     });
   }
 
-  onDataTypeChange() {
-    if (this.dataType === 'votes') {
-      this.loadMatchDayOptions();
-    } else {
-      this.loadData();
-    }
-  }
-
-  private loadMatchDayOptions() {
-    if (!this.selectedSeasonId) return;
-    this.api.getSeasonVotesMatchdays(this.selectedSeasonId).subscribe({
-      next: matchDays => {
-        this.matchDayOptions.set([
-          { label: 'Tutte le giornate', value: null },
-          ...matchDays.map(d => ({ label: `Giornata ${d}`, value: d })),
-        ]);
-        this.selectedMatchDay = null;
-        this.loadData();
-      },
-    });
-  }
-
   loadData() {
     if (!this.selectedSeasonId) return;
-    if (this.dataType === 'votes' && !this.matchDayOptions().length) {
-      this.loadMatchDayOptions();
-      return;
-    }
     this.columns.set(
       this.dataType === 'stats' ? STATS_COLUMNS : this.dataType === 'prices' ? PRICES_COLUMNS : VOTES_COLUMNS
     );
@@ -305,18 +282,19 @@ export class HistoryComponent implements OnInit {
     if (!this.selectedSeasonId) return;
     this.importing.set(true);
     this.message.set('');
-    this.api.importSeasonHistory(this.selectedSeasonId, this.dataType).subscribe({
+    const matchDay = this.dataType === 'votes' ? this.selectedMatchDay : undefined;
+    this.api.importSeasonHistory(this.selectedSeasonId, this.dataType, false, matchDay).subscribe({
       next: res => {
         this.importing.set(false);
         if (res.imported) {
           const skipped = res.skipped_match_days?.length
             ? ` (${res.skipped_match_days.length} giornate senza dati: ${res.skipped_match_days.join(', ')})`
             : '';
-          this.setMessage(`Importate ${res.rows} righe per la stagione ${res.season}.${skipped}`, false);
+          const giornata = res.match_day ? ` (giornata ${res.match_day})` : '';
+          this.setMessage(`Importate ${res.rows} righe per la stagione ${res.season}${giornata}.${skipped}`, false);
         } else {
           this.setMessage(res.message, false);
         }
-        if (this.dataType === 'votes') this.matchDayOptions.set([]);
         this.loadData();
       },
       error: err => {
@@ -364,7 +342,6 @@ export class HistoryComponent implements OnInit {
 
     this.importingAll.set(false);
     this.bulkProgress.set('');
-    if (this.dataType === 'votes') this.matchDayOptions.set([]);
     if (this.selectedSeasonId) this.loadData();
   }
 
