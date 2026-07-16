@@ -70,13 +70,25 @@ import { ApiService } from '../../core/services/api.service';
               <span style="width:80px;text-align:center">
                 <span class="role-badge role-{{ p.role }}">{{ p.role }}</span>
               </span>
-              <span style="width:100px;text-align:right;font-weight:700">{{ p.price ?? '—' }}</span>
-              <span style="width:80px;text-align:right;color:var(--accent-blue)">{{ p.fvm ?? '—' }}</span>
-              <span style="width:70px;text-align:right"
-                    [class.text-positive]="(p.price_diff ?? 0) > 0"
-                    [class.text-negative]="(p.price_diff ?? 0) < 0">
-                {{ (p.price_diff ?? 0) > 0 ? '+' : '' }}{{ p.price_diff ?? '0' }}
-              </span>
+              @if (selectedSeasonId) {
+                <span style="width:100px;text-align:right;font-weight:700">{{ p.price ?? '—' }}</span>
+                <span style="width:80px;text-align:right;color:var(--accent-blue)">{{ p.fvm ?? '—' }}</span>
+                <span style="width:70px;text-align:right"
+                      [class.text-positive]="(p.price_diff ?? 0) > 0"
+                      [class.text-negative]="(p.price_diff ?? 0) < 0">
+                  {{ (p.price_diff ?? 0) > 0 ? '+' : '' }}{{ p.price_diff ?? '0' }}
+                </span>
+              } @else {
+                <span style="width:100px;text-align:right;font-weight:700">
+                  {{ p.price_min ?? '—' }}–{{ p.price_max ?? '—' }}
+                </span>
+                <span style="width:80px;text-align:right;color:var(--accent-blue)">
+                  {{ p.fvm_min ?? '—' }}–{{ p.fvm_max ?? '—' }}
+                </span>
+                <span style="width:70px;text-align:right">
+                  <span [class.text-negative]="(p.diff_min ?? 0) < 0">{{ p.diff_min ?? '—' }}</span>/<span [class.text-positive]="(p.diff_max ?? 0) > 0">{{ p.diff_max ?? '—' }}</span>
+                </span>
+              }
             </a>
           }
           @empty {
