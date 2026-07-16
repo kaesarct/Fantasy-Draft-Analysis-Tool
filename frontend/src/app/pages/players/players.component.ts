@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -35,6 +35,12 @@ import { ApiService } from '../../core/services/api.service';
           placeholder="Ruolo"
           (ngModelChange)="applyFilters()"
           [showClear]="true"
+          styleClass="filter-drop"
+        />
+        <p-dropdown
+          [options]="seasonOptions()"
+          [(ngModel)]="selectedSeasonId"
+          (ngModelChange)="onSeasonChange()"
           styleClass="filter-drop"
         />
         <span class="results-count text-muted">{{ filtered().length }} risultati</span>
@@ -120,6 +126,9 @@ export class PlayersComponent implements OnInit {
   search = '';
   selectedRole: string | null = null;
 
+  seasons = signal<any[]>([]);
+  selectedSeasonId: number | null = null;
+
   roleOptions = [
     { label: 'Portiere', value: 'P' },
     { label: 'Difensore', value: 'D' },
@@ -127,13 +136,28 @@ export class PlayersComponent implements OnInit {
     { label: 'Attaccante', value: 'A' },
   ];
 
+  seasonOptions = computed(() => [
+    { label: 'Tutte le stagioni', value: null },
+    ...this.seasons().map(s => ({ label: s.label, value: s.id })),
+  ]);
+
   constructor(private api: ApiService) {}
 
   ngOnInit() {
-    this.api.getPlayers().subscribe({
+    this.api.getSeasons().subscribe(seasons => this.seasons.set(seasons));
+    this.loadPlayers();
+  }
+
+  onSeasonChange() {
+    this.loadPlayers();
+  }
+
+  private loadPlayers() {
+    this.loading.set(true);
+    this.api.getPlayers(undefined, undefined, undefined, this.selectedSeasonId ?? undefined).subscribe({
       next: data => {
         this.allPlayers.set(data);
-        this.filtered.set(data);
+        this.applyFilters();
         this.loading.set(false);
       },
       error: () => this.loading.set(false),

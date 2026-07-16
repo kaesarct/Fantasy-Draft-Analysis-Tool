@@ -24,23 +24,61 @@ def list_players(
         q = q.filter(Player.role == role.upper())
     if team_id:
         q = q.filter(Player.serie_a_team_id == team_id)
+
+    # Quotazioni: PlayerSnapshot e' il sync live (solo per la stagione in
+    # corso), PlayerSeasonPrice e' l'import storico (stagioni concluse) — le
+    # due tabelle non hanno mai dati per la stessa stagione contemporaneamente,
+    # quindi si usa quella con righe per la stagione richiesta.
+    latest_snapshot_by_player: dict[int, PlayerSnapshot] = {}
+    historical_price_by_fanta_id: dict[int, PlayerSeasonPrice] = {}
     if season_id:
-        quoted_player_ids = db.query(PlayerSnapshot.player_id).filter(
-            PlayerSnapshot.season_id == season_id
-        ).distinct().subquery()
-        q = q.filter(Player.id.in_(quoted_player_ids))
+        snaps = (
+            db.query(PlayerSnapshot)
+            .filter(PlayerSnapshot.season_id == season_id)
+            .order_by(PlayerSnapshot.match_day)
+            .all()
+        )
+        for snap in snaps:
+            latest_snapshot_by_player[snap.player_id] = snap
+
+        if latest_snapshot_by_player:
+            q = q.filter(Player.id.in_(latest_snapshot_by_player.keys()))
+        else:
+            prices = (
+                db.query(PlayerSeasonPrice)
+                .filter(PlayerSeasonPrice.season_id == season_id)
+                .all()
+            )
+            historical_price_by_fanta_id = {pr.fanta_player_id: pr for pr in prices}
+            q = q.filter(
+                Player.fanta_id.isnot(None),
+                Player.fanta_id.in_(historical_price_by_fanta_id.keys()),
+            )
+
     players = q.order_by(Player.name).all()
-    return [
-        {
+    result = []
+    for p in players:
+        snap = latest_snapshot_by_player.get(p.id)
+        hist_price = historical_price_by_fanta_id.get(p.fanta_id) if p.fanta_id else None
+        if snap:
+            price, price_diff, fvm = snap.price, snap.price_diff, snap.fvm
+        elif hist_price:
+            price, price_diff, fvm = hist_price.market_value_a, hist_price.difference, hist_price.fvm
+        else:
+            price, price_diff, fvm = None, None, None
+
+        result.append({
             "id": p.id,
             "fanta_id": p.fanta_id,
             "name": p.name,
             "role": p.role,
             "secondary_role": p.secondary_role,
             "serie_a_team_id": p.serie_a_team_id,
-        }
-        for p in players
-    ]
+            "price": price,
+            "price_diff": price_diff,
+            "fvm": fvm,
+        })
+    return result
 
 
 @router.get("/{player_id}")
