@@ -182,6 +182,7 @@ export class AppComponent implements OnInit {
     { label: 'Infortuni',   route: '/injuries',   icon: '🏥' },
     { label: 'Storico',     route: '/history',    icon: '📊' },
     { label: 'Admin',       route: '/admin',      icon: '⚙️'  },
+    { label: 'Gestione Squadre', route: '/admin/squadre', icon: '🛡️' },
   ];
 
   constructor(public auth: AuthService) {}
@@ -193,7 +194,7 @@ export class AppComponent implements OnInit {
   visibleNavItems(): NavItem[] {
     return this.auth.isAuthenticated()
       ? this.navItems
-      : this.navItems.filter(item => item.route !== '/admin');
+      : this.navItems.filter(item => !item.route.startsWith('/admin'));
   }
 
   logout() {
