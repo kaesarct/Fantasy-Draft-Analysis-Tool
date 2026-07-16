@@ -4,8 +4,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.season_data import PlayerSeasonVote
 from app.services.auth_service import require_admin
-from app.services.season_import import DATA_TYPE_CONFIG, build_csv, import_season_data
+from app.services.season_import import (
+    DATA_TYPE_CONFIG, VOTES_COLUMNS, build_csv, build_votes_csv, import_season_data, import_season_votes,
+)
 
 router = APIRouter(prefix="/history", tags=["history"])
 
@@ -19,15 +22,65 @@ def _validate_data_type(data_type: str) -> str:
 @router.post("/seasons/{season_id}/import")
 def import_season(
     season_id: int,
-    data_type: str = Query(..., description="'stats' o 'prices'"),
+    data_type: str = Query(..., description="'stats', 'prices' o 'votes'"),
     force: bool = Query(False),
     db: Session = Depends(get_db),
     _admin: str = Depends(require_admin),
 ):
-    result = import_season_data(db, season_id, _validate_data_type(data_type), force)
+    if data_type == "votes":
+        result = import_season_votes(db, season_id, force)
+    else:
+        result = import_season_data(db, season_id, _validate_data_type(data_type), force)
     if not result["ok"]:
         raise HTTPException(status_code=502, detail=result["message"])
     return result
+
+
+@router.get("/seasons/{season_id}/votes/matchdays")
+def get_season_votes_matchdays(season_id: int, db: Session = Depends(get_db)):
+    rows = (
+        db.query(PlayerSeasonVote.match_day)
+        .filter(PlayerSeasonVote.season_id == season_id)
+        .distinct()
+        .order_by(PlayerSeasonVote.match_day)
+        .all()
+    )
+    return [r[0] for r in rows]
+
+
+@router.get("/seasons/{season_id}/votes")
+def get_season_votes(
+    season_id: int,
+    match_day: int | None = Query(None),
+    search: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    query = db.query(PlayerSeasonVote).filter(PlayerSeasonVote.season_id == season_id)
+    if match_day is not None:
+        query = query.filter(PlayerSeasonVote.match_day == match_day)
+    if search:
+        query = query.filter(PlayerSeasonVote.player_name.ilike(f"%{search}%"))
+    fields = ["fanta_player_id", *VOTES_COLUMNS]
+    return [
+        {field: getattr(record, field) for field in fields}
+        for record in query.order_by(PlayerSeasonVote.match_day, PlayerSeasonVote.player_name).all()
+    ]
+
+
+@router.get("/seasons/{season_id}/votes/csv")
+def download_season_votes_csv(
+    season_id: int,
+    match_day: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    buffer = build_votes_csv(db, season_id, match_day)
+    suffix = f"_g{match_day}" if match_day is not None else ""
+    filename = f"votes_season_{season_id}{suffix}.csv"
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/seasons/{season_id}/stats")

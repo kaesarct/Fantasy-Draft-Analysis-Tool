@@ -133,6 +133,26 @@ class FantaClient:
     def download_prices_excel(self, season_code: int, dest_dir: str) -> str | None:
         return self._download_season_excel("prices", season_code, dest_dir)
 
+    def download_votes_excel(self, season_code: int, match_day: int, dest_dir: str) -> str | None:
+        """Scarica l'Excel voti di una singola giornata per un season_code arbitrario."""
+        if not self._ensure_session():
+            return None
+        url = f"{URL_API}Excel/votes/{season_code}/{match_day}"
+        try:
+            resp = self._session.get(url, stream=True, timeout=30)
+            if resp.status_code == 200:
+                path = os.path.join(dest_dir, f"votes_g{match_day}.xlsx")
+                with open(path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                logger.info("votes season_code=%s giornata=%s downloaded → %s", season_code, match_day, path)
+                return path
+            logger.error("Download votes (season_code=%s, giornata=%s) failed: %s", season_code, match_day, resp.status_code)
+        except Exception as e:
+            logger.error("Download votes (season_code=%s, giornata=%s) exception: %s", season_code, match_day, e)
+        return None
+
 
 # Singleton
 fanta_client = FantaClient()

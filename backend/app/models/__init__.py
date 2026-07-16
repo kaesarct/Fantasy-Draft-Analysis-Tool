@@ -19,6 +19,6 @@ from app.models.serie_a_injury import (  # noqa
 )
 from app.models.lineup import LineupSubmission, LineupPlayer  # noqa
 from app.models.lineup_import import LineupRawImport  # noqa
-from app.models.season_data import ImportedSeasonData, PlayerSeasonStat, PlayerSeasonPrice  # noqa
+from app.models.season_data import ImportedSeasonData, PlayerSeasonStat, PlayerSeasonPrice, PlayerSeasonVote  # noqa
 from app.models.trade import Trade, TradeItem  # noqa
 from app.models.auction import Auction, AuctionBid, AuctionStatus  # noqa

@@ -32,6 +32,19 @@ const PRICES_COLUMNS = [
   { field: 'fvm', label: 'FVM' },
 ];
 
+const VOTES_COLUMNS = [
+  { field: 'match_day', label: 'G' },
+  { field: 'player_name', label: 'Giocatore' },
+  { field: 'role', label: 'R' },
+  { field: 'team', label: 'Squadra' },
+  { field: 'vote', label: 'Voto' },
+  { field: 'goals_scored', label: 'Gf' },
+  { field: 'assists', label: 'Ass' },
+  { field: 'yellow_cards', label: 'Amm' },
+  { field: 'red_cards', label: 'Esp' },
+  { field: 'own_goals', label: 'Au' },
+];
+
 @Component({
   selector: 'app-history',
   standalone: true,
@@ -54,9 +67,17 @@ const PRICES_COLUMNS = [
         <p-dropdown
           [options]="dataTypeOptions"
           [(ngModel)]="dataType"
-          (ngModelChange)="loadData()"
+          (ngModelChange)="onDataTypeChange()"
           styleClass="filter-drop"
         />
+        @if (dataType === 'votes') {
+          <p-dropdown
+            [options]="matchDayOptions()"
+            [(ngModel)]="selectedMatchDay"
+            (ngModelChange)="loadData()"
+            styleClass="filter-drop"
+          />
+        }
         <input
           pInputText
           class="filter-input"
@@ -82,6 +103,9 @@ const PRICES_COLUMNS = [
             [disabled]="importing() || !seasonOptions().length"
             (click)="importAll()"
           ></button>
+        }
+        @if (dataType === 'votes') {
+          <span class="text-muted" style="font-size:12px">⏱ i voti sono per giornata: l'import di una stagione può richiedere fino a un minuto</span>
         }
         <a
           *ngIf="selectedSeasonId && filtered().length"
@@ -198,13 +222,17 @@ export class HistoryComponent implements OnInit {
   messageIsError = signal(false);
   columns = signal(STATS_COLUMNS);
 
+  matchDayOptions = signal<{ label: string; value: number | null }[]>([]);
+
   selectedSeasonId: number | null = null;
-  dataType: 'stats' | 'prices' = 'stats';
+  selectedMatchDay: number | null = null;
+  dataType: 'stats' | 'prices' | 'votes' = 'stats';
   search = '';
 
   dataTypeOptions = [
     { label: 'Statistiche', value: 'stats' },
     { label: 'Quotazioni', value: 'prices' },
+    { label: 'Voti', value: 'votes' },
   ];
 
   constructor(private api: ApiService, public auth: AuthService) {}
@@ -217,14 +245,44 @@ export class HistoryComponent implements OnInit {
     });
   }
 
+  onDataTypeChange() {
+    if (this.dataType === 'votes') {
+      this.loadMatchDayOptions();
+    } else {
+      this.loadData();
+    }
+  }
+
+  private loadMatchDayOptions() {
+    if (!this.selectedSeasonId) return;
+    this.api.getSeasonVotesMatchdays(this.selectedSeasonId).subscribe({
+      next: matchDays => {
+        this.matchDayOptions.set([
+          { label: 'Tutte le giornate', value: null },
+          ...matchDays.map(d => ({ label: `Giornata ${d}`, value: d })),
+        ]);
+        this.selectedMatchDay = null;
+        this.loadData();
+      },
+    });
+  }
+
   loadData() {
     if (!this.selectedSeasonId) return;
-    this.columns.set(this.dataType === 'stats' ? STATS_COLUMNS : PRICES_COLUMNS);
+    if (this.dataType === 'votes' && !this.matchDayOptions().length) {
+      this.loadMatchDayOptions();
+      return;
+    }
+    this.columns.set(
+      this.dataType === 'stats' ? STATS_COLUMNS : this.dataType === 'prices' ? PRICES_COLUMNS : VOTES_COLUMNS
+    );
     this.loading.set(true);
     this.message.set('');
     const req = this.dataType === 'stats'
       ? this.api.getSeasonStats(this.selectedSeasonId)
-      : this.api.getSeasonPrices(this.selectedSeasonId);
+      : this.dataType === 'prices'
+      ? this.api.getSeasonPrices(this.selectedSeasonId)
+      : this.api.getSeasonVotes(this.selectedSeasonId, this.selectedMatchDay);
     req.subscribe({
       next: data => { this.rows.set(data); this.applyFilter(); this.loading.set(false); },
       error: () => {
@@ -250,10 +308,15 @@ export class HistoryComponent implements OnInit {
     this.api.importSeasonHistory(this.selectedSeasonId, this.dataType).subscribe({
       next: res => {
         this.importing.set(false);
-        this.setMessage(
-          res.imported ? `Importate ${res.rows} righe per la stagione ${res.season}.` : res.message,
-          false
-        );
+        if (res.imported) {
+          const skipped = res.skipped_match_days?.length
+            ? ` (${res.skipped_match_days.length} giornate senza dati: ${res.skipped_match_days.join(', ')})`
+            : '';
+          this.setMessage(`Importate ${res.rows} righe per la stagione ${res.season}.${skipped}`, false);
+        } else {
+          this.setMessage(res.message, false);
+        }
+        if (this.dataType === 'votes') this.matchDayOptions.set([]);
         this.loadData();
       },
       error: err => {
@@ -265,7 +328,8 @@ export class HistoryComponent implements OnInit {
 
   async importAll() {
     const seasons = this.seasonOptions();
-    const types: ('stats' | 'prices')[] = ['stats', 'prices'];
+    const types: ('stats' | 'prices' | 'votes')[] = ['stats', 'prices', 'votes'];
+    const typeLabels = { stats: 'statistiche', prices: 'quotazioni', votes: 'voti' };
     const total = seasons.length * types.length;
     let done = 0;
 
@@ -276,14 +340,15 @@ export class HistoryComponent implements OnInit {
     for (const season of seasons) {
       for (const type of types) {
         this.bulkProgress.set(`${done + 1}/${total}`);
-        const label = `${season.label} · ${type === 'stats' ? 'statistiche' : 'quotazioni'}`;
+        const label = `${season.label} · ${typeLabels[type]}`;
         try {
           const res = await firstValueFrom(this.api.importSeasonHistory(season.value, type));
+          const skipped = res.skipped_match_days?.length ? `, ${res.skipped_match_days.length} giornate senza dati` : '';
           this.bulkResults.update(r => [...r, {
             key: `${season.value}-${type}`,
             label,
             ok: true,
-            detail: res.imported ? `${res.rows} righe importate` : res.message,
+            detail: res.imported ? `${res.rows} righe importate${skipped}` : res.message,
           }]);
         } catch (err: any) {
           this.bulkResults.update(r => [...r, {
@@ -299,11 +364,14 @@ export class HistoryComponent implements OnInit {
 
     this.importingAll.set(false);
     this.bulkProgress.set('');
+    if (this.dataType === 'votes') this.matchDayOptions.set([]);
     if (this.selectedSeasonId) this.loadData();
   }
 
   csvUrl(): string {
-    return this.api.getSeasonHistoryCsvUrl(this.selectedSeasonId!, this.dataType);
+    return this.dataType === 'votes'
+      ? this.api.getSeasonVotesCsvUrl(this.selectedSeasonId!, this.selectedMatchDay)
+      : this.api.getSeasonHistoryCsvUrl(this.selectedSeasonId!, this.dataType);
   }
 
   private setMessage(text: string, isError: boolean) {

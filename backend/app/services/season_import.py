@@ -6,6 +6,7 @@ salvo force=True.
 """
 import csv
 import io
+import re
 import tempfile
 from datetime import datetime
 
@@ -13,11 +14,19 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.models.season import Season
-from app.models.season_data import ImportedSeasonData, PlayerSeasonStat, PlayerSeasonPrice
+from app.models.season_data import ImportedSeasonData, PlayerSeasonStat, PlayerSeasonPrice, PlayerSeasonVote
 from app.services.fanta_client import fanta_client
 
 import logging
 logger = logging.getLogger(__name__)
+
+MAX_MATCH_DAY = 38
+
+VOTES_COLUMNS = [
+    "match_day", "role", "player_name", "team", "vote", "goals_scored",
+    "goals_conceded", "penalties_saved", "penalties_scored", "penalties_missed",
+    "own_goals", "yellow_cards", "red_cards", "assists",
+]
 
 SEASON_BASE_YEAR = 2005
 
@@ -153,6 +162,154 @@ def import_season_data(db: Session, season_id: int, data_type: str, force: bool 
     return {"ok": True, "imported": True, "rows": rows, "season": season.label}
 
 
+def _parse_vote(value) -> float | None:
+    """Il voto puo' comparire come stringa con suffisso (es. "6*"): si tollera
+    invece di scartare l'intera riga (a differenza di sync_service.sync_votes)."""
+    if pd.isna(value):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text or text.lower() == "sv":
+        return None
+    match = re.match(r"[\d.]+", text)
+    return float(match.group()) if match else None
+
+
+def _parse_votes_dataframe(file_path: str) -> list[dict]:
+    """Excel voti per giornata: righe raggruppate per squadra (riga con solo il
+    nome squadra, poi sotto-header "Cod. Ruolo Nome Voto Gf Gs Rp Rs Rf Au Amm
+    Esp Ass", poi le righe giocatore). La squadra si ricava per forward-fill
+    dall'ultima riga-intestazione vista."""
+    df = pd.read_excel(file_path, header=None, skiprows=4)
+    if df.shape[1] == 0:
+        return []
+
+    def _num(v):
+        if pd.isna(v):
+            return None
+        return v.item() if hasattr(v, "item") else v
+
+    rows = []
+    current_team = None
+    for _, r in df.iterrows():
+        values = r.values
+        col0 = values[0]
+        col0_str = "" if pd.isna(col0) else str(col0).strip()
+        rest_na = all(pd.isna(x) for x in values[1:])
+
+        if isinstance(col0, str) and rest_na and col0_str and col0_str != "Cod.":
+            current_team = col0_str
+            continue
+        if not col0_str.isdigit():
+            continue
+
+        role = values[1] if not pd.isna(values[1]) else None
+        if role not in ("P", "D", "C", "A"):
+            # Il foglio include anche la riga dell'allenatore (ruolo "ALL"):
+            # non e' un giocatore, non appartiene allo storico voti giocatori.
+            continue
+
+        rows.append({
+            "fanta_player_id": int(col0_str),
+            "role": role,
+            "player_name": values[2] if not pd.isna(values[2]) else None,
+            "team": current_team,
+            "vote": _parse_vote(values[3]),
+            "goals_scored": _num(values[4]),
+            "goals_conceded": _num(values[5]),
+            "penalties_saved": _num(values[6]),
+            "penalties_scored": _num(values[7]),
+            "penalties_missed": _num(values[8]),
+            "own_goals": _num(values[9]),
+            "yellow_cards": _num(values[10]),
+            "red_cards": _num(values[11]),
+            "assists": _num(values[12]),
+        })
+    return rows
+
+
+def import_season_votes(db: Session, season_id: int, force: bool = False) -> dict:
+    """Come import_season_data, ma i voti sono pubblicati per giornata: cicla
+    fino a MAX_MATCH_DAY download separati, saltando le giornate senza dati."""
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        return {"ok": False, "message": f"Stagione {season_id} non trovata"}
+
+    already = (
+        db.query(ImportedSeasonData)
+        .filter(
+            ImportedSeasonData.season_id == season_id,
+            ImportedSeasonData.data_type == "votes",
+        )
+        .first()
+    )
+    if already and not force:
+        return {"ok": True, "imported": False, "message": "Dati gia' importati (usa force per reimportare)"}
+
+    season_code = season.year_start - SEASON_BASE_YEAR
+    total_rows = 0
+    skipped_match_days = []
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        for match_day in range(1, MAX_MATCH_DAY + 1):
+            file_path = fanta_client.download_votes_excel(season_code, match_day, tmp_dir)
+            if not file_path:
+                skipped_match_days.append(match_day)
+                continue
+
+            try:
+                rows = _parse_votes_dataframe(file_path)
+            except Exception as e:
+                db.rollback()
+                logger.error(
+                    "Errore parsing voti giornata %s stagione %s: %s", match_day, season.label, e
+                )
+                skipped_match_days.append(match_day)
+                continue
+
+            if not rows:
+                skipped_match_days.append(match_day)
+                continue
+
+            for row in rows:
+                record = (
+                    db.query(PlayerSeasonVote)
+                    .filter(
+                        PlayerSeasonVote.season_id == season_id,
+                        PlayerSeasonVote.fanta_player_id == row["fanta_player_id"],
+                        PlayerSeasonVote.match_day == match_day,
+                    )
+                    .first()
+                )
+                if not record:
+                    db.add(PlayerSeasonVote(season_id=season_id, match_day=match_day, **row))
+                    db.flush()
+                else:
+                    for field, value in row.items():
+                        if field != "fanta_player_id":
+                            setattr(record, field, value)
+            total_rows += len(rows)
+
+    if total_rows == 0:
+        db.rollback()
+        return {"ok": False, "message": "Nessun dato voti trovato per questa stagione"}
+
+    if already:
+        already.imported_at = datetime.utcnow()
+    else:
+        db.add(ImportedSeasonData(season_id=season_id, data_type="votes"))
+    db.commit()
+    logger.info(
+        "Importate %s righe voti per stagione %s (giornate saltate: %s)",
+        total_rows, season.label, skipped_match_days,
+    )
+    return {
+        "ok": True, "imported": True, "rows": total_rows,
+        "season": season.label, "skipped_match_days": skipped_match_days,
+    }
+
+
 def build_csv(db: Session, season_id: int, data_type: str) -> io.BytesIO:
     """CSV in memoria (nessun file su disco) con tutte le righe della stagione."""
     model = DATA_TYPE_CONFIG[data_type]["model"]
@@ -162,6 +319,25 @@ def build_csv(db: Session, season_id: int, data_type: str) -> io.BytesIO:
     writer = csv.DictWriter(buffer, fieldnames=fieldnames)
     writer.writeheader()
     for record in db.query(model).filter(model.season_id == season_id).all():
+        writer.writerow({field: getattr(record, field) for field in fieldnames})
+
+    byte_buffer = io.BytesIO(buffer.getvalue().encode("utf-8"))
+    byte_buffer.seek(0)
+    return byte_buffer
+
+
+def build_votes_csv(db: Session, season_id: int, match_day: int | None = None) -> io.BytesIO:
+    """Come build_csv, ma per PlayerSeasonVote: opzionalmente filtrato per giornata."""
+    fieldnames = ["season_id", "fanta_player_id", *VOTES_COLUMNS]
+
+    query = db.query(PlayerSeasonVote).filter(PlayerSeasonVote.season_id == season_id)
+    if match_day is not None:
+        query = query.filter(PlayerSeasonVote.match_day == match_day)
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    for record in query.order_by(PlayerSeasonVote.match_day, PlayerSeasonVote.player_name).all():
         writer.writerow({field: getattr(record, field) for field in fieldnames})
 
     byte_buffer = io.BytesIO(buffer.getvalue().encode("utf-8"))

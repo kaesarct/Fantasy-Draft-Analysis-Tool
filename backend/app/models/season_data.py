@@ -69,3 +69,30 @@ class PlayerSeasonPrice(Base):
     __table_args__ = (
         UniqueConstraint("season_id", "fanta_player_id", name="uq_season_price"),
     )
+
+
+class PlayerSeasonVote(Base):
+    """Voto e bonus/malus per giornata, stagioni storiche (Excel votes/{season}/{giornata})."""
+    __tablename__ = "player_season_votes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False)
+    fanta_player_id = Column(Integer, nullable=False)
+    match_day = Column(Integer, nullable=False)
+    role = Column(String(2), nullable=True)
+    player_name = Column(String(150), nullable=True)
+    team = Column(String(50), nullable=True)
+    vote = Column(Float, nullable=True)
+    goals_scored = Column(Float, nullable=True)
+    goals_conceded = Column(Float, nullable=True)
+    penalties_saved = Column(Float, nullable=True)
+    penalties_scored = Column(Float, nullable=True)
+    penalties_missed = Column(Float, nullable=True)
+    own_goals = Column(Float, nullable=True)
+    yellow_cards = Column(Float, nullable=True)
+    red_cards = Column(Float, nullable=True)
+    assists = Column(Float, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("season_id", "fanta_player_id", "match_day", name="uq_season_vote"),
+    )
