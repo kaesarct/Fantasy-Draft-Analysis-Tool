@@ -92,6 +92,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/seasons/${seasonId}/competitions`);
   }
 
+  getSeasonLeagues(seasonId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/seasons/${seasonId}/leagues`);
+  }
+
   getSeasonStandings(seasonId: number, compType?: string, matchDay?: number): Observable<any[]> {
     let params = new HttpParams();
     if (compType) params = params.set('comp_type', compType);
@@ -243,5 +247,34 @@ export class ApiService {
 
   dismissPlayerMerge(playerIdA: number, playerIdB: number): Observable<any> {
     return this.http.post(`${this.base}/player-merge/dismiss`, { player_id_a: playerIdA, player_id_b: playerIdB });
+  }
+
+  // ── Gestione squadre (admin) ──────────────────────────────────
+  createFantaTeam(data: { name: string; season_id: number; league_id: number }): Observable<any> {
+    return this.http.post(`${this.base}/fanta-teams`, data);
+  }
+
+  updateFantaTeam(teamId: number, data: { name?: string; league_id?: number }): Observable<any> {
+    return this.http.patch(`${this.base}/fanta-teams/${teamId}`, data);
+  }
+
+  deleteFantaTeam(teamId: number): Observable<any> {
+    return this.http.delete(`${this.base}/fanta-teams/${teamId}`);
+  }
+
+  mergeTeams(keepId: number, removeId: number): Observable<any> {
+    return this.http.post(`${this.base}/team-merge/merge`, { keep_id: keepId, remove_id: removeId });
+  }
+
+  getCompetitionParticipants(compId: number): Observable<{ participants: any[]; available: any[] }> {
+    return this.http.get<{ participants: any[]; available: any[] }>(`${this.base}/competitions/${compId}/participants`);
+  }
+
+  addCompetitionParticipant(compId: number, teamId: number): Observable<any> {
+    return this.http.post(`${this.base}/competitions/${compId}/participants`, { fanta_team_id: teamId });
+  }
+
+  removeCompetitionParticipant(compId: number, teamId: number): Observable<any> {
+    return this.http.delete(`${this.base}/competitions/${compId}/participants/${teamId}`);
   }
 }

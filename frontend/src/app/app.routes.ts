@@ -64,6 +64,12 @@ export const routes: Routes = [
       import('./pages/admin/admin.component').then(m => m.AdminComponent),
   },
   {
+    path: 'admin/squadre',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/admin-teams/admin-teams.component').then(m => m.AdminTeamsComponent),
+  },
+  {
     path: 'login',
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),

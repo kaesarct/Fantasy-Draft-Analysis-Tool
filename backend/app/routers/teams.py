@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.fanta_allenatore import FantaAllenatore
 from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaRoster, League
+from app.services.auth_service import require_admin
+from app.routers.team_merge import _SIMPLE_TABLES, _UNIQUE_TABLES
 
 router = APIRouter(tags=["teams"])
 
@@ -24,6 +26,17 @@ class AllenatoreUpdate(BaseModel):
 class CoachAssign(BaseModel):
     allenatore_id: int
     is_primary: bool = True
+
+
+class FantaTeamCreate(BaseModel):
+    name: str
+    season_id: int
+    league_id: int
+
+
+class FantaTeamUpdate(BaseModel):
+    name: str | None = None
+    league_id: int | None = None
 
 
 # ── FantaAllenatori ─────────────────────────────────────────────────────────
@@ -116,6 +129,69 @@ def list_fanta_teams(
     return [_team_summary(t) for t in teams]
 
 
+@teams_router.post("", status_code=201)
+def create_fanta_team(data: FantaTeamCreate, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(400, "Il nome e' obbligatorio")
+    league = db.query(League).filter(League.id == data.league_id).first()
+    if not league or league.season_id != data.season_id:
+        raise HTTPException(400, "La lega scelta non appartiene alla stagione indicata")
+    team = FantaTeam(name=name, season_id=data.season_id, league_id=data.league_id)
+    db.add(team)
+    db.commit()
+    return _team_summary(team)
+
+
+@teams_router.patch("/{team_id}")
+def update_fanta_team(team_id: int, data: FantaTeamUpdate, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
+    if not team:
+        raise HTTPException(404, "Team not found")
+    if data.name is not None:
+        name = data.name.strip()
+        if not name:
+            raise HTTPException(400, "Il nome non puo' essere vuoto")
+        team.name = name
+    if data.league_id is not None:
+        league = db.query(League).filter(League.id == data.league_id).first()
+        if not league or league.season_id != team.season_id:
+            raise HTTPException(400, "La lega scelta non appartiene alla stagione della squadra")
+        team.league_id = data.league_id
+    db.commit()
+    return _team_summary(team)
+
+
+@teams_router.delete("/{team_id}")
+def delete_fanta_team(team_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
+    if not team:
+        raise HTTPException(404, "Team not found")
+
+    references: dict[str, int] = {}
+    for model, fk_field in _SIMPLE_TABLES:
+        count = db.query(model).filter(getattr(model, fk_field) == team_id).count()
+        if count:
+            references[f"{model.__tablename__}.{fk_field}"] = count
+    for model, fk_field, _keys in _UNIQUE_TABLES:
+        count = db.query(model).filter(getattr(model, fk_field) == team_id).count()
+        if count:
+            references[model.__tablename__] = references.get(model.__tablename__, 0) + count
+
+    if references:
+        raise HTTPException(
+            409,
+            detail={
+                "message": "Squadra non eliminabile: ha ancora dati collegati. Usa l'unione invece della cancellazione.",
+                "references": references,
+            },
+        )
+
+    db.delete(team)
+    db.commit()
+    return {"ok": True}
+
+
 @teams_router.get("/{team_id}")
 def get_fanta_team(team_id: int, db: Session = Depends(get_db)):
     t = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
@@ -140,7 +216,7 @@ def get_fanta_team(team_id: int, db: Session = Depends(get_db)):
 
 
 @teams_router.post("/{team_id}/coaches", status_code=201)
-def assign_coach(team_id: int, data: CoachAssign, db: Session = Depends(get_db)):
+def assign_coach(team_id: int, data: CoachAssign, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
     if not team:
         raise HTTPException(404, "Team not found")
@@ -174,7 +250,7 @@ def assign_coach(team_id: int, data: CoachAssign, db: Session = Depends(get_db))
 
 
 @teams_router.delete("/{team_id}/coaches/{allenatore_id}")
-def remove_coach(team_id: int, allenatore_id: int, db: Session = Depends(get_db)):
+def remove_coach(team_id: int, allenatore_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     link = (
         db.query(FantaTeamCoach)
         .filter(

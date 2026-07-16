@@ -1,9 +1,11 @@
 """League, standings and competitions router."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
-from app.models.competition import Competition, CompetitionStanding, MatchResult
+from app.models.competition import Competition, CompetitionStanding, MatchResult, CompetitionGroup, CompetitionGroupTeam
+from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
 
 router = APIRouter(tags=["league"])
@@ -31,6 +33,12 @@ def set_current_season(season_id: int, db: Session = Depends(get_db), _admin: st
     season.is_current = True
     db.commit()
     return {"ok": True, "id": season.id, "label": season.label}
+
+
+@seasons_router.get("/{season_id}/leagues")
+def get_season_leagues(season_id: int, db: Session = Depends(get_db)):
+    leagues = db.query(League).filter(League.season_id == season_id).all()
+    return [{"id": l.id, "level": l.level} for l in leagues]
 
 
 @seasons_router.get("/{season_id}/competitions")
@@ -106,6 +114,92 @@ def get_competition_matches(comp_id: int, match_day: int | None = None, db: Sess
         }
         for r in results
     ]
+
+
+class ParticipantAdd(BaseModel):
+    fanta_team_id: int
+
+
+_DEFAULT_GROUP_NAME = "Girone Unico"
+
+
+@competitions_router.get("/{comp_id}/participants")
+def get_competition_participants(comp_id: int, db: Session = Depends(get_db)):
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(404, "Competizione non trovata")
+
+    participant_ids = {
+        row[0]
+        for row in (
+            db.query(CompetitionGroupTeam.fanta_team_id)
+            .join(CompetitionGroup, CompetitionGroup.id == CompetitionGroupTeam.group_id)
+            .filter(CompetitionGroup.competition_id == comp_id)
+            .all()
+        )
+    }
+    season_teams = db.query(FantaTeam).filter(FantaTeam.season_id == comp.season_id).order_by(FantaTeam.name).all()
+
+    return {
+        "participants": [
+            {"id": t.id, "name": t.name} for t in season_teams if t.id in participant_ids
+        ],
+        "available": [
+            {"id": t.id, "name": t.name} for t in season_teams if t.id not in participant_ids
+        ],
+    }
+
+
+@competitions_router.post("/{comp_id}/participants", status_code=201)
+def add_competition_participant(
+    comp_id: int, data: ParticipantAdd, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(404, "Competizione non trovata")
+    team = db.query(FantaTeam).filter(FantaTeam.id == data.fanta_team_id).first()
+    if not team or team.season_id != comp.season_id:
+        raise HTTPException(400, "La squadra scelta non appartiene alla stagione della competizione")
+
+    group = (
+        db.query(CompetitionGroup)
+        .filter(CompetitionGroup.competition_id == comp_id, CompetitionGroup.name == _DEFAULT_GROUP_NAME)
+        .first()
+    )
+    if not group:
+        group = CompetitionGroup(competition_id=comp_id, name=_DEFAULT_GROUP_NAME)
+        db.add(group)
+        db.flush()
+
+    existing = (
+        db.query(CompetitionGroupTeam)
+        .filter(CompetitionGroupTeam.group_id == group.id, CompetitionGroupTeam.fanta_team_id == data.fanta_team_id)
+        .first()
+    )
+    if not existing:
+        db.add(CompetitionGroupTeam(group_id=group.id, fanta_team_id=data.fanta_team_id))
+        db.commit()
+    return {"ok": True}
+
+
+@competitions_router.delete("/{comp_id}/participants/{fanta_team_id}")
+def remove_competition_participant(
+    comp_id: int, fanta_team_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    deleted = (
+        db.query(CompetitionGroupTeam)
+        .filter(
+            CompetitionGroupTeam.fanta_team_id == fanta_team_id,
+            CompetitionGroupTeam.group_id.in_(
+                db.query(CompetitionGroup.id).filter(CompetitionGroup.competition_id == comp_id)
+            ),
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    if not deleted:
+        raise HTTPException(404, "Squadra non iscritta a questa competizione")
+    return {"ok": True}
 
 
 router.include_router(seasons_router)
