@@ -50,6 +50,7 @@ def get_player(player_id: int, db: Session = Depends(get_db)):
         "id": p.id, "fanta_id": p.fanta_id, "name": p.name,
         "role": p.role, "secondary_role": p.secondary_role,
         "serie_a_team_id": p.serie_a_team_id,
+        "serie_a_team_name": p.serie_a_team.name if p.serie_a_team else None,
     }
 
 
