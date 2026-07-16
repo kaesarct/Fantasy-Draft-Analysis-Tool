@@ -50,6 +50,7 @@ def init_db():
     # sicurezza (nel caso rendesse due righe eleggibili per merge).
     _migrate_normalize_player_names()
     _migrate_backfill_fanta_id()
+    _migrate_backfill_unknown_role()
     _migrate_dedupe_players()
 
 
@@ -196,5 +197,43 @@ def _migrate_backfill_fanta_id():
         db.commit()
         if backfilled:
             logger.info("Backfill fanta_id: %s giocatori collegati allo storico", backfilled)
+    finally:
+        db.close()
+
+
+def _migrate_backfill_unknown_role():
+    """L'import storico rose 2020-21 da PDF non aveva la colonna ruolo: i
+    Player creati da li' hanno role='?' come placeholder. Backfill dal ruolo
+    piu' recente disponibile in player_season_stats/prices per lo stesso
+    fanta_id. Idempotente."""
+    from app.models.player import Player
+    from app.models.season_data import PlayerSeasonStat, PlayerSeasonPrice
+
+    db = SessionLocal()
+    try:
+        role_by_fanta_id_season: dict[int, list] = {}
+        for model in (PlayerSeasonStat, PlayerSeasonPrice):
+            for fanta_id, season_id, role in (
+                db.query(model.fanta_player_id, model.season_id, model.role)
+                .filter(model.role.isnot(None))
+                .all()
+            ):
+                role_by_fanta_id_season.setdefault(fanta_id, []).append((season_id, role))
+
+        backfilled = 0
+        for p in db.query(Player).filter(Player.role == "?").all():
+            if not p.fanta_id:
+                continue
+            entries = role_by_fanta_id_season.get(p.fanta_id)
+            if not entries:
+                continue
+            # Il ruolo piu' recente (stagione piu' alta) come migliore stima
+            # del ruolo "attuale" del giocatore.
+            p.role = max(entries, key=lambda e: e[0])[1]
+            backfilled += 1
+
+        db.commit()
+        if backfilled:
+            logger.info("Backfill ruolo: %s giocatori con ruolo '?' risolti dallo storico", backfilled)
     finally:
         db.close()
