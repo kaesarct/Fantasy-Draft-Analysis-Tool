@@ -54,6 +54,7 @@ def init_db():
     _migrate_backfill_fanta_id()
     _migrate_backfill_unknown_role()
     _migrate_dedupe_players()
+    _migrate_merge_duplicate_teams()
 
 
 def _migrate_add_leghe_id():
@@ -149,6 +150,72 @@ def _migrate_dedupe_players():
                 "Deduplica giocatori: %s righe duplicate rimosse, %s rose ricollegate",
                 merged_players, relinked_rosters,
             )
+    finally:
+        db.close()
+
+
+def _migrate_merge_duplicate_teams():
+    """La stagione 2023-24 ha creato due righe FantaTeam per 6 squadre reali:
+    il file rose CSV (_import_rose_csv_2023) e i file classifiche/calendario
+    usano un nome leggermente diverso (apostrofi, trattini, spazi, refusi)
+    per la stessa squadra, e norm() in import_history.py normalizza solo
+    spazi/maiuscole. Risultato: una riga ha la rosa (25 giocatori dall'asta)
+    e 0 partite/classifiche, l'altra ha partite/classifiche e 0 rose —
+    verificato a mano, non e' un'euristica generica. Da qui in avanti
+    TEAM_ALIASES previene la ricomparsa in un futuro re-import da zero;
+    questa migrazione unisce una tantum i dati gia' divisi in DB.
+    Idempotente: salta le coppie gia' unite (remove_id non esiste piu')."""
+    from app.models.fanta_team import FantaTeam, FantaRoster, FantaTeamCoach, FantaTeamLogo
+    from app.models.competition import MatchResult, CompetitionStanding
+
+    # (keep_id, remove_id): keep = riga con partite/classifica (nome canonico
+    # scelto per coerenza con le altre stagioni; per "SER" senza precedente,
+    # confermato dall'utente).
+    TEAM_MERGES = [
+        (141, 147),  # bestplayerscrew <- Best Player Crew
+        (125, 150),  # Facoceris Karma <- Facoceri's Karma
+        (126, 151),  # Real Muraturi <- Real Muratori
+        (134, 153),  # AL-FIZZY <- AL FIZZY
+        (136, 154),  # Nikafootballclub <- Nika football club
+        (135, 152),  # SER - otto <- SER
+    ]
+
+    db = SessionLocal()
+    try:
+        merged = 0
+        for keep_id, remove_id in TEAM_MERGES:
+            remove_team = db.query(FantaTeam).filter(FantaTeam.id == remove_id).first()
+            if not remove_team:
+                continue
+
+            db.query(FantaRoster).filter(FantaRoster.fanta_team_id == remove_id).update(
+                {"fanta_team_id": keep_id}
+            )
+            db.flush()
+
+            still_referenced = (
+                db.query(FantaRoster).filter(FantaRoster.fanta_team_id == remove_id).first()
+                or db.query(MatchResult).filter(
+                    (MatchResult.fanta_team_home_id == remove_id)
+                    | (MatchResult.fanta_team_away_id == remove_id)
+                ).first()
+                or db.query(CompetitionStanding).filter(CompetitionStanding.fanta_team_id == remove_id).first()
+                or db.query(FantaTeamCoach).filter(FantaTeamCoach.fanta_team_id == remove_id).first()
+                or db.query(FantaTeamLogo).filter(FantaTeamLogo.fanta_team_id == remove_id).first()
+            )
+            if still_referenced:
+                logger.warning(
+                    "Merge squadra %s -> %s saltato: restano riferimenti non ricollegati",
+                    remove_id, keep_id,
+                )
+                continue
+
+            db.delete(remove_team)
+            merged += 1
+
+        db.commit()
+        if merged:
+            logger.info("Unite %s squadre duplicate (stagione 2023-24)", merged)
     finally:
         db.close()
 

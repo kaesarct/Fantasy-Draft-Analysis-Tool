@@ -61,6 +61,15 @@ TEAM_ALIASES = {
     (2020, "panuzzo"): "#PANEINGOLD",
     (2022, "new bombola fire"): "BOMBOLA X",
     (2022, "as vikings"): "VULCANIA FC",
+    # 2023-24: il file rose CSV usa un nome diverso da classifiche/calendari
+    # per queste 6 squadre (apostrofi, trattini, spazi, refusi) — norm()
+    # normalizza solo spazi/maiuscole, non basta a farli convergere.
+    (2023, "best player crew"): "bestplayerscrew",
+    (2023, "facoceri's karma"): "Facoceris Karma",
+    (2023, "real muratori"): "Real Muraturi",
+    (2023, "al fizzy"): "AL-FIZZY",
+    (2023, "nika football club"): "Nikafootballclub",
+    (2023, "ser"): "SER - otto",
 }
 
 GIORNATA_RE = re.compile(r"(\d+)ª\s+Giornata\s+lega", re.IGNORECASE)
