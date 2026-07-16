@@ -67,8 +67,10 @@ import { ApiService } from '../../core/services/api.service';
             <a [routerLink]="['/players', p.id]" class="player-row">
               <span class="row-num text-muted">{{ i + 1 }}</span>
               <span class="player-name">{{ p.name }}</span>
-              <span style="width:80px;text-align:center">
-                <span class="role-badge role-{{ p.role }}">{{ p.role }}</span>
+              <span style="width:80px;text-align:center" class="role-badges">
+                @for (r of p.roles; track r) {
+                  <span class="role-badge role-{{ r }}">{{ r }}</span>
+                }
               </span>
               @if (selectedSeasonId) {
                 <span style="width:100px;text-align:right;font-weight:700">{{ p.price ?? '—' }}</span>
@@ -126,6 +128,7 @@ import { ApiService } from '../../core/services/api.service';
     }
     .player-row:hover { background: var(--bg-elevated); }
     .row-num { width: 40px; font-size: 12px; }
+    .role-badges { display: flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap; }
     .player-name { flex: 1; font-weight: 600; font-size: 13px; }
     .mb-2 { margin-bottom: 8px; }
     .mb-4 { margin-bottom: 24px; }
@@ -182,7 +185,7 @@ export class PlayersComponent implements OnInit {
       result = result.filter(p => p.name.toLowerCase().includes(this.search.toLowerCase()));
     }
     if (this.selectedRole) {
-      result = result.filter(p => p.role === this.selectedRole);
+      result = result.filter(p => p.roles.includes(this.selectedRole));
     }
     this.filtered.set(result);
   }

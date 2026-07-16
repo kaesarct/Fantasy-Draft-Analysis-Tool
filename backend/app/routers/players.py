@@ -34,6 +34,7 @@ def list_players(
     historical_price_by_fanta_id: dict[int, PlayerSeasonPrice] = {}
     hist_range_by_fanta_id: dict[int, tuple] = {}
     live_range_by_player: dict[int, tuple] = {}
+    roles_by_fanta_id: dict[int, set] = {}
 
     if season_id:
         snaps = (
@@ -61,14 +62,17 @@ def list_players(
     else:
         # "Tutte le stagioni": min/max mai ottenuto, aggregati in una sola
         # query per fonte (non per giocatore, per evitare N+1 su ~1100 righe).
+        # func.nullif(fvm, 0): nelle stagioni precedenti al tracciamento del
+        # FVM il campo vale letteralmente 0 (non NULL) — un placeholder, non
+        # un vero minimo/massimo, va escluso dall'aggregazione.
         hist_range_by_fanta_id = {
             row.fanta_player_id: (row.min_price, row.max_price, row.min_fvm, row.max_fvm, row.min_diff, row.max_diff)
             for row in db.query(
                 PlayerSeasonPrice.fanta_player_id,
                 func.min(PlayerSeasonPrice.market_value_a).label("min_price"),
                 func.max(PlayerSeasonPrice.market_value_a).label("max_price"),
-                func.min(PlayerSeasonPrice.fvm).label("min_fvm"),
-                func.max(PlayerSeasonPrice.fvm).label("max_fvm"),
+                func.min(func.nullif(PlayerSeasonPrice.fvm, 0)).label("min_fvm"),
+                func.max(func.nullif(PlayerSeasonPrice.fvm, 0)).label("max_fvm"),
                 func.min(PlayerSeasonPrice.difference).label("min_diff"),
                 func.max(PlayerSeasonPrice.difference).label("max_diff"),
             ).group_by(PlayerSeasonPrice.fanta_player_id).all()
@@ -79,12 +83,16 @@ def list_players(
                 PlayerSnapshot.player_id,
                 func.min(PlayerSnapshot.price).label("min_price"),
                 func.max(PlayerSnapshot.price).label("max_price"),
-                func.min(PlayerSnapshot.fvm).label("min_fvm"),
-                func.max(PlayerSnapshot.fvm).label("max_fvm"),
+                func.min(func.nullif(PlayerSnapshot.fvm, 0)).label("min_fvm"),
+                func.max(func.nullif(PlayerSnapshot.fvm, 0)).label("max_fvm"),
                 func.min(PlayerSnapshot.price_diff).label("min_diff"),
                 func.max(PlayerSnapshot.price_diff).label("max_diff"),
             ).group_by(PlayerSnapshot.player_id).all()
         }
+        for row in db.query(PlayerSeasonStat.fanta_player_id, PlayerSeasonStat.role).filter(PlayerSeasonStat.role.isnot(None)).distinct().all():
+            roles_by_fanta_id.setdefault(row[0], set()).add(row[1])
+        for row in db.query(PlayerSeasonPrice.fanta_player_id, PlayerSeasonPrice.role).filter(PlayerSeasonPrice.role.isnot(None)).distinct().all():
+            roles_by_fanta_id.setdefault(row[0], set()).add(row[1])
 
     players = q.order_by(Player.name).all()
     result = []
@@ -93,7 +101,7 @@ def list_players(
             "id": p.id,
             "fanta_id": p.fanta_id,
             "name": p.name,
-            "role": p.role,
+            "roles": [p.role] if p.role else [],
             "secondary_role": p.secondary_role,
             "serie_a_team_id": p.serie_a_team_id,
             "price": None, "price_diff": None, "fvm": None,
@@ -111,7 +119,11 @@ def list_players(
                 entry["price"] = hist_price.market_value_a
                 entry["price_diff"] = hist_price.difference
                 entry["fvm"] = hist_price.fvm
+                if hist_price.role:
+                    entry["roles"] = [hist_price.role]
         else:
+            if p.fanta_id and p.fanta_id in roles_by_fanta_id:
+                entry["roles"] = sorted(roles_by_fanta_id[p.fanta_id] | set(entry["roles"]))
             ranges = []
             if p.fanta_id and p.fanta_id in hist_range_by_fanta_id:
                 ranges.append(hist_range_by_fanta_id[p.fanta_id])
@@ -202,6 +214,8 @@ def get_player_scores(player_id: int, season_id: int | None = None, db: Session 
 
 @router.get("/{player_id}/season-history")
 def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
+    from app.models.fanta_team import FantaRoster, FantaTeam
+
     p = db.query(Player).filter(Player.id == player_id).first()
     if not p:
         raise HTTPException(404, "Player not found")
@@ -216,7 +230,18 @@ def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
         pr.season_id: pr
         for pr in db.query(PlayerSeasonPrice).filter(PlayerSeasonPrice.fanta_player_id == p.fanta_id).all()
     }
-    season_ids = set(stats) | set(prices)
+
+    fanta_teams_by_season: dict[int, list] = {}
+    for season_id, team_name in (
+        db.query(FantaRoster.season_id, FantaTeam.name)
+        .join(FantaTeam, FantaTeam.id == FantaRoster.fanta_team_id)
+        .filter(FantaRoster.player_id == player_id)
+        .distinct()
+        .all()
+    ):
+        fanta_teams_by_season.setdefault(season_id, []).append(team_name)
+
+    season_ids = set(stats) | set(prices) | set(fanta_teams_by_season)
     if not season_ids:
         return []
 
@@ -229,9 +254,15 @@ def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
     for sid in season_ids:
         st = stats.get(sid)
         pr = prices.get(sid)
+        # fvm=0 e' un placeholder per le stagioni precedenti al tracciamento
+        # del FVM (vedi list_players), non un valore reale.
+        fvm = pr.fvm if pr and pr.fvm else None
         result.append({
             "season_id": sid,
             "season_label": labels.get(sid),
+            "role": (st.role if st else None) or (pr.role if pr else None),
+            "team": (st.team if st else None) or (pr.team if pr else None),
+            "fanta_teams": sorted(fanta_teams_by_season.get(sid, [])),
             "matches_played": st.matches_played if st else None,
             "average_vote": st.average_vote if st else None,
             "fantasy_average": st.fantasy_average if st else None,
@@ -242,7 +273,7 @@ def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
             "market_value_i": pr.market_value_i if pr else None,
             "market_value_a": pr.market_value_a if pr else None,
             "difference": pr.difference if pr else None,
-            "fvm": pr.fvm if pr else None,
+            "fvm": fvm,
         })
     result.sort(key=lambda r: r["season_id"], reverse=True)
     return result

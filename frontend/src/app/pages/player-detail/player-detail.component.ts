@@ -50,6 +50,9 @@ import { ApiService } from '../../core/services/api.service';
               <div class="season-table">
                 <div class="table-header">
                   <span style="width:90px">Stagione</span>
+                  <span style="width:50px;text-align:center">Ruolo</span>
+                  <span style="width:100px">Squadra</span>
+                  <span style="width:140px">Fantasquadra</span>
                   <span style="width:50px;text-align:right">Pv</span>
                   <span style="width:60px;text-align:right">Mv</span>
                   <span style="width:60px;text-align:right">Fm</span>
@@ -65,6 +68,11 @@ import { ApiService } from '../../core/services/api.service';
                 @for (h of seasonHistory(); track h.season_id) {
                   <div class="score-row">
                     <span style="width:90px;font-weight:600">{{ h.season_label }}</span>
+                    <span style="width:50px;text-align:center">
+                      @if (h.role) { <span class="role-badge role-{{ h.role }}">{{ h.role }}</span> } @else { — }
+                    </span>
+                    <span style="width:100px">{{ h.team ?? '—' }}</span>
+                    <span style="width:140px">{{ h.fanta_teams?.length ? h.fanta_teams.join(' / ') : '—' }}</span>
                     <span style="width:50px;text-align:right">{{ h.matches_played ?? '—' }}</span>
                     <span style="width:60px;text-align:right">{{ h.average_vote ?? '—' }}</span>
                     <span style="width:60px;text-align:right">{{ h.fantasy_average ?? '—' }}</span>
@@ -151,7 +159,7 @@ import { ApiService } from '../../core/services/api.service';
 
     .player-table { padding: 0; overflow: hidden; }
     .table-scroll { padding: 0; overflow-x: auto; }
-    .season-table { min-width: 720px; }
+    .season-table { min-width: 1050px; }
     .table-header, .score-row {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 16px;
