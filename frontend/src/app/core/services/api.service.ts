@@ -35,6 +35,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/players/${id}/scores`, { params });
   }
 
+  getPlayerSeasonHistory(id: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/players/${id}/season-history`);
+  }
+
   // ── Allenatori ─────────────────────────────────────────────
   getAllenatori(): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/allenatori`);

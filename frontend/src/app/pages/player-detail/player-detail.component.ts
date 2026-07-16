@@ -41,6 +41,54 @@ import { ApiService } from '../../core/services/api.service';
           />
         </div>
 
+        <div class="section-title">📅 Storico per stagione</div>
+        <div class="mb-4">
+          @if (loadingSeasonHistory()) {
+            <p-skeleton height="140px" />
+          } @else if (seasonHistory().length) {
+            <div class="table-scroll card">
+              <div class="season-table">
+                <div class="table-header">
+                  <span style="width:90px">Stagione</span>
+                  <span style="width:50px;text-align:right">Pv</span>
+                  <span style="width:60px;text-align:right">Mv</span>
+                  <span style="width:60px;text-align:right">Fm</span>
+                  <span style="width:50px;text-align:right">Gf</span>
+                  <span style="width:50px;text-align:right">Ass</span>
+                  <span style="width:50px;text-align:right">Amm</span>
+                  <span style="width:50px;text-align:right">Esp</span>
+                  <span style="width:60px;text-align:right">Qt.I</span>
+                  <span style="width:60px;text-align:right">Qt.A</span>
+                  <span style="width:60px;text-align:right">Diff.</span>
+                  <span style="width:60px;text-align:right">FVM</span>
+                </div>
+                @for (h of seasonHistory(); track h.season_id) {
+                  <div class="score-row">
+                    <span style="width:90px;font-weight:600">{{ h.season_label }}</span>
+                    <span style="width:50px;text-align:right">{{ h.matches_played ?? '—' }}</span>
+                    <span style="width:60px;text-align:right">{{ h.average_vote ?? '—' }}</span>
+                    <span style="width:60px;text-align:right">{{ h.fantasy_average ?? '—' }}</span>
+                    <span style="width:50px;text-align:right">{{ h.goals_scored ?? '—' }}</span>
+                    <span style="width:50px;text-align:right">{{ h.assists ?? '—' }}</span>
+                    <span style="width:50px;text-align:right">{{ h.yellow_cards ?? '—' }}</span>
+                    <span style="width:50px;text-align:right">{{ h.red_cards ?? '—' }}</span>
+                    <span style="width:60px;text-align:right">{{ h.market_value_i ?? '—' }}</span>
+                    <span style="width:60px;text-align:right">{{ h.market_value_a ?? '—' }}</span>
+                    <span style="width:60px;text-align:right"
+                          [class.text-positive]="(h.difference ?? 0) > 0"
+                          [class.text-negative]="(h.difference ?? 0) < 0">
+                      {{ h.difference ?? '—' }}
+                    </span>
+                    <span style="width:60px;text-align:right">{{ h.fvm ?? '—' }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          } @else {
+            <p class="text-muted">Nessuno storico disponibile per questo giocatore.</p>
+          }
+        </div>
+
         <div class="section-title">📈 Andamento quotazione</div>
         <div class="card mb-4 chart-card">
           @if (loadingData()) {
@@ -102,6 +150,8 @@ import { ApiService } from '../../core/services/api.service';
     .chart-card { padding: 16px; }
 
     .player-table { padding: 0; overflow: hidden; }
+    .table-scroll { padding: 0; overflow-x: auto; }
+    .season-table { min-width: 720px; }
     .table-header, .score-row {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 16px;
@@ -128,6 +178,9 @@ export class PlayerDetailComponent implements OnInit {
 
   history = signal<any[]>([]);
   scores = signal<any[]>([]);
+
+  seasonHistory = signal<any[]>([]);
+  loadingSeasonHistory = signal(true);
 
   seasonOptions = computed(() =>
     this.seasons().map(s => ({ label: s.label, value: s.id }))
@@ -164,6 +217,14 @@ export class PlayerDetailComponent implements OnInit {
       const current = seasons.find((s: any) => s.is_current) ?? seasons[0];
       this.selectedSeasonId = current?.id ?? null;
       this.loadSeasonData();
+    });
+
+    this.api.getPlayerSeasonHistory(this.playerId).subscribe({
+      next: rows => {
+        this.seasonHistory.set(rows);
+        this.loadingSeasonHistory.set(false);
+      },
+      error: () => this.loadingSeasonHistory.set(false),
     });
   }
 
