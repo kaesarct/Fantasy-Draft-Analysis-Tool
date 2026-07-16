@@ -212,6 +212,66 @@ import { ApiService } from '../../core/services/api.service';
           }
         }
       </div>
+
+      <!-- Merge manuale -->
+      <div class="section-title">🔍 Unisci manualmente</div>
+      <div class="card mb-4 merge-panel">
+        <p class="text-muted" style="padding:14px 16px 0; font-size:12px; margin:0;">
+          Per i casi che il ricontrollo automatico non trova perché il cambio nome è troppo diverso.
+        </p>
+        <div class="manual-pick">
+          <p-dropdown
+            [options]="allPlayersOptions()"
+            [(ngModel)]="manualPlayerAId"
+            placeholder="Cerca primo giocatore..."
+            [filter]="true"
+            filterBy="label"
+            [showClear]="true"
+            appendTo="body"
+            styleClass="manual-drop"
+          />
+          <span class="text-muted">+</span>
+          <p-dropdown
+            [options]="allPlayersOptions()"
+            [(ngModel)]="manualPlayerBId"
+            placeholder="Cerca secondo giocatore..."
+            [filter]="true"
+            filterBy="label"
+            [showClear]="true"
+            appendTo="body"
+            styleClass="manual-drop"
+          />
+        </div>
+        @if (manualPair(); as pair) {
+          <div class="merge-pair">
+            @for (p of [pair.player_a, pair.player_b]; track p.id) {
+              <div class="merge-row" [class.empty-row]="!p.fanta_id">
+                <span class="merge-name">{{ p.name }}</span>
+                @if (p.roles?.length) {
+                  <span class="role-badge role-{{ p.roles[0] }}">{{ p.roles.join('/') }}</span>
+                }
+                @if (!p.fanta_id) {
+                  <span class="badge badge-red" style="font-size:10px">vuoto</span>
+                }
+                <span class="text-muted merge-stats">
+                  {{ p.price_min ?? '—' }}–{{ p.price_max ?? '—' }} ·
+                  FVM {{ p.fvm_min ?? '—' }}–{{ p.fvm_max ?? '—' }} ·
+                  Diff {{ p.diff_min ?? '—' }}/{{ p.diff_max ?? '—' }}
+                </span>
+                <button
+                  pButton
+                  size="small"
+                  label="Unisci qui"
+                  [loading]="mergingKey() === pairKey(pair)"
+                  (click)="mergeManualInto(p, pair)"
+                ></button>
+              </div>
+            }
+          </div>
+        } @else if (manualPlayerAId && manualPlayerBId) {
+          <p class="text-muted" style="padding:10px 16px;">Seleziona due giocatori diversi.</p>
+        }
+      </div>
     </div>
   `,
   styles: [`
@@ -282,6 +342,9 @@ import { ApiService } from '../../core/services/api.service';
       font-size: 12px; padding: 4px 0 0; text-decoration: underline;
     }
     .dismiss-btn:hover { color: var(--text-negative, #e05260); }
+
+    .manual-pick { display: flex; align-items: center; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
+    .manual-drop { min-width: 220px; }
   `],
 })
 export class AdminComponent implements OnInit {
@@ -302,6 +365,7 @@ export class AdminComponent implements OnInit {
   mergeCandidates = signal<any[]>([]);
   loadingMergeCandidates = signal(false);
   mergingKey = signal<string | null>(null);
+  allPlayersForMerge = signal<any[]>([]);
 
   newUsername = '';
   newDisplayName = '';
@@ -309,6 +373,8 @@ export class AdminComponent implements OnInit {
   selectedSeasonId: number | null = null;
   syncSeasonId: number | null = null;
   syncMatchDay: number | null = null;
+  manualPlayerAId: number | null = null;
+  manualPlayerBId: number | null = null;
 
   constructor(private api: ApiService) {}
 
@@ -317,6 +383,7 @@ export class AdminComponent implements OnInit {
     this.loadSeasons();
     this.loadDetectedMatchday();
     this.loadMergeCandidates();
+    this.loadAllPlayersForMerge();
   }
 
   loadSeasons() {
@@ -510,6 +577,49 @@ export class AdminComponent implements OnInit {
         this.mergingKey.set(null);
         if (res.merged) {
           this.setMessage(`"${remove.name}" unito a "${keep.name}".`, false);
+        } else {
+          this.setMessage(
+            `Merge parziale: alcuni dati non ricollegati per conflitto (${JSON.stringify(res.conflicts)}). Non ho eliminato "${remove.name}".`,
+            true,
+          );
+        }
+        this.loadMergeCandidates();
+      },
+      error: err => {
+        this.mergingKey.set(null);
+        this.setMessage(err.error?.detail || 'Errore durante il merge.', true);
+      },
+    });
+  }
+
+  loadAllPlayersForMerge() {
+    this.api.getPlayers().subscribe({ next: players => this.allPlayersForMerge.set(players) });
+  }
+
+  allPlayersOptions() {
+    return this.allPlayersForMerge().map(p => ({ label: p.name, value: p.id }));
+  }
+
+  manualPair(): { player_a: any; player_b: any } | null {
+    if (!this.manualPlayerAId || !this.manualPlayerBId || this.manualPlayerAId === this.manualPlayerBId) {
+      return null;
+    }
+    const a = this.allPlayersForMerge().find(p => p.id === this.manualPlayerAId);
+    const b = this.allPlayersForMerge().find(p => p.id === this.manualPlayerBId);
+    return a && b ? { player_a: a, player_b: b } : null;
+  }
+
+  mergeManualInto(keep: any, pair: any) {
+    const remove = pair.player_a.id === keep.id ? pair.player_b : pair.player_a;
+    this.mergingKey.set(this.pairKey(pair));
+    this.api.mergePlayers(keep.id, remove.id).subscribe({
+      next: res => {
+        this.mergingKey.set(null);
+        if (res.merged) {
+          this.setMessage(`"${remove.name}" unito a "${keep.name}".`, false);
+          this.manualPlayerAId = null;
+          this.manualPlayerBId = null;
+          this.loadAllPlayersForMerge();
         } else {
           this.setMessage(
             `Merge parziale: alcuni dati non ricollegati per conflitto (${JSON.stringify(res.conflicts)}). Non ho eliminato "${remove.name}".`,
