@@ -44,6 +44,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_add_leghe_id()
     _migrate_widen_secondary_role()
+    _migrate_widen_price_secondary_role()
     # L'ordine conta: normalizzare prima uniforma le eventuali coppie duplicate
     # che differiscono solo per maiuscole/minuscole (es. "ALBIOL" vs "Albiol"),
     # cosi' la deduplica le riconosce come lo stesso nome; il backfill usa il
@@ -73,6 +74,17 @@ def _migrate_widen_secondary_role():
     with engine.begin() as conn:
         conn.execute(text(
             "ALTER TABLE players ALTER COLUMN secondary_role TYPE VARCHAR(50)"
+        ))
+
+
+def _migrate_widen_price_secondary_role():
+    # Il file quotazioni 2015-16 contiene liste ruoli Mantra piu' lunghe di
+    # 10 caratteri (es. "Dd;Ds;Cd;Cs"): con VARCHAR(10) l'import falliva per
+    # l'intera stagione (StringDataRightTruncation), lasciando 0 quotazioni.
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE player_season_prices ALTER COLUMN secondary_role TYPE VARCHAR(50)"
         ))
 
 

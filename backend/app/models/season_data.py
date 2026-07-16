@@ -54,7 +54,7 @@ class PlayerSeasonPrice(Base):
     season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False)
     fanta_player_id = Column(Integer, nullable=False)
     role = Column(String(2), nullable=True)
-    secondary_role = Column(String(10), nullable=True)
+    secondary_role = Column(String(50), nullable=True)
     player_name = Column(String(150), nullable=True)
     team = Column(String(50), nullable=True)
     market_value_a = Column(Float, nullable=True)
