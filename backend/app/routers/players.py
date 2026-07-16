@@ -10,6 +10,72 @@ from app.models.season_data import PlayerSeasonStat, PlayerSeasonPrice, PlayerSe
 router = APIRouter(prefix="/players", tags=["players"])
 
 
+def aggregate_player_ranges(db: Session):
+    """Min/max mai ottenuto (quotazione/FVM/diff) e ruoli storici distinti,
+    per fanta_id/player_id, su tutte le stagioni. Usato sia da list_players
+    ("Tutte le stagioni") sia dal tool di merge giocatori. Una sola query per
+    fonte (non per giocatore) per evitare N+1 su ~1100 righe.
+
+    func.nullif(fvm, 0): nelle stagioni precedenti al tracciamento del FVM il
+    campo vale letteralmente 0 (non NULL) — un placeholder, non un vero
+    minimo/massimo, va escluso dall'aggregazione."""
+    hist_range_by_fanta_id: dict[int, tuple] = {
+        row.fanta_player_id: (row.min_price, row.max_price, row.min_fvm, row.max_fvm, row.min_diff, row.max_diff)
+        for row in db.query(
+            PlayerSeasonPrice.fanta_player_id,
+            func.min(PlayerSeasonPrice.market_value_a).label("min_price"),
+            func.max(PlayerSeasonPrice.market_value_a).label("max_price"),
+            func.min(func.nullif(PlayerSeasonPrice.fvm, 0)).label("min_fvm"),
+            func.max(func.nullif(PlayerSeasonPrice.fvm, 0)).label("max_fvm"),
+            func.min(PlayerSeasonPrice.difference).label("min_diff"),
+            func.max(PlayerSeasonPrice.difference).label("max_diff"),
+        ).group_by(PlayerSeasonPrice.fanta_player_id).all()
+    }
+    live_range_by_player: dict[int, tuple] = {
+        row.player_id: (row.min_price, row.max_price, row.min_fvm, row.max_fvm, row.min_diff, row.max_diff)
+        for row in db.query(
+            PlayerSnapshot.player_id,
+            func.min(PlayerSnapshot.price).label("min_price"),
+            func.max(PlayerSnapshot.price).label("max_price"),
+            func.min(func.nullif(PlayerSnapshot.fvm, 0)).label("min_fvm"),
+            func.max(func.nullif(PlayerSnapshot.fvm, 0)).label("max_fvm"),
+            func.min(PlayerSnapshot.price_diff).label("min_diff"),
+            func.max(PlayerSnapshot.price_diff).label("max_diff"),
+        ).group_by(PlayerSnapshot.player_id).all()
+    }
+    roles_by_fanta_id: dict[int, set] = {}
+    for row in db.query(PlayerSeasonStat.fanta_player_id, PlayerSeasonStat.role).filter(PlayerSeasonStat.role.isnot(None)).distinct().all():
+        roles_by_fanta_id.setdefault(row[0], set()).add(row[1])
+    for row in db.query(PlayerSeasonPrice.fanta_player_id, PlayerSeasonPrice.role).filter(PlayerSeasonPrice.role.isnot(None)).distinct().all():
+        roles_by_fanta_id.setdefault(row[0], set()).add(row[1])
+    return hist_range_by_fanta_id, live_range_by_player, roles_by_fanta_id
+
+
+def player_range_entry(p: Player, hist_range_by_fanta_id, live_range_by_player, roles_by_fanta_id) -> dict:
+    """Calcola roles/price_min/price_max/fvm_min/fvm_max/diff_min/diff_max
+    per un giocatore, dati i dizionari di aggregate_player_ranges()."""
+    entry = {
+        "roles": [p.role] if p.role else [],
+        "price_min": None, "price_max": None,
+        "fvm_min": None, "fvm_max": None,
+        "diff_min": None, "diff_max": None,
+    }
+    if p.fanta_id and p.fanta_id in roles_by_fanta_id:
+        entry["roles"] = sorted(roles_by_fanta_id[p.fanta_id] | set(entry["roles"]))
+
+    ranges = []
+    if p.fanta_id and p.fanta_id in hist_range_by_fanta_id:
+        ranges.append(hist_range_by_fanta_id[p.fanta_id])
+    if p.id in live_range_by_player:
+        ranges.append(live_range_by_player[p.id])
+    for idx, (min_key, max_key) in enumerate([("price_min", "price_max"), ("fvm_min", "fvm_max"), ("diff_min", "diff_max")]):
+        values_min = [r[idx * 2] for r in ranges if r[idx * 2] is not None]
+        values_max = [r[idx * 2 + 1] for r in ranges if r[idx * 2 + 1] is not None]
+        entry[min_key] = min(values_min) if values_min else None
+        entry[max_key] = max(values_max) if values_max else None
+    return entry
+
+
 @router.get("")
 def list_players(
     search: str | None = Query(None),
@@ -32,9 +98,9 @@ def list_players(
     # quindi si usa quella con righe per la stagione richiesta.
     latest_snapshot_by_player: dict[int, PlayerSnapshot] = {}
     historical_price_by_fanta_id: dict[int, PlayerSeasonPrice] = {}
-    hist_range_by_fanta_id: dict[int, tuple] = {}
-    live_range_by_player: dict[int, tuple] = {}
-    roles_by_fanta_id: dict[int, set] = {}
+    hist_range_by_fanta_id: dict = {}
+    live_range_by_player: dict = {}
+    roles_by_fanta_id: dict = {}
 
     if season_id:
         snaps = (
@@ -60,39 +126,7 @@ def list_players(
                 Player.fanta_id.in_(historical_price_by_fanta_id.keys()),
             )
     else:
-        # "Tutte le stagioni": min/max mai ottenuto, aggregati in una sola
-        # query per fonte (non per giocatore, per evitare N+1 su ~1100 righe).
-        # func.nullif(fvm, 0): nelle stagioni precedenti al tracciamento del
-        # FVM il campo vale letteralmente 0 (non NULL) — un placeholder, non
-        # un vero minimo/massimo, va escluso dall'aggregazione.
-        hist_range_by_fanta_id = {
-            row.fanta_player_id: (row.min_price, row.max_price, row.min_fvm, row.max_fvm, row.min_diff, row.max_diff)
-            for row in db.query(
-                PlayerSeasonPrice.fanta_player_id,
-                func.min(PlayerSeasonPrice.market_value_a).label("min_price"),
-                func.max(PlayerSeasonPrice.market_value_a).label("max_price"),
-                func.min(func.nullif(PlayerSeasonPrice.fvm, 0)).label("min_fvm"),
-                func.max(func.nullif(PlayerSeasonPrice.fvm, 0)).label("max_fvm"),
-                func.min(PlayerSeasonPrice.difference).label("min_diff"),
-                func.max(PlayerSeasonPrice.difference).label("max_diff"),
-            ).group_by(PlayerSeasonPrice.fanta_player_id).all()
-        }
-        live_range_by_player = {
-            row.player_id: (row.min_price, row.max_price, row.min_fvm, row.max_fvm, row.min_diff, row.max_diff)
-            for row in db.query(
-                PlayerSnapshot.player_id,
-                func.min(PlayerSnapshot.price).label("min_price"),
-                func.max(PlayerSnapshot.price).label("max_price"),
-                func.min(func.nullif(PlayerSnapshot.fvm, 0)).label("min_fvm"),
-                func.max(func.nullif(PlayerSnapshot.fvm, 0)).label("max_fvm"),
-                func.min(PlayerSnapshot.price_diff).label("min_diff"),
-                func.max(PlayerSnapshot.price_diff).label("max_diff"),
-            ).group_by(PlayerSnapshot.player_id).all()
-        }
-        for row in db.query(PlayerSeasonStat.fanta_player_id, PlayerSeasonStat.role).filter(PlayerSeasonStat.role.isnot(None)).distinct().all():
-            roles_by_fanta_id.setdefault(row[0], set()).add(row[1])
-        for row in db.query(PlayerSeasonPrice.fanta_player_id, PlayerSeasonPrice.role).filter(PlayerSeasonPrice.role.isnot(None)).distinct().all():
-            roles_by_fanta_id.setdefault(row[0], set()).add(row[1])
+        hist_range_by_fanta_id, live_range_by_player, roles_by_fanta_id = aggregate_player_ranges(db)
 
     players = q.order_by(Player.name).all()
     result = []
@@ -101,14 +135,11 @@ def list_players(
             "id": p.id,
             "fanta_id": p.fanta_id,
             "name": p.name,
-            "roles": [p.role] if p.role else [],
             "secondary_role": p.secondary_role,
             "serie_a_team_id": p.serie_a_team_id,
             "price": None, "price_diff": None, "fvm": None,
-            "price_min": None, "price_max": None,
-            "fvm_min": None, "fvm_max": None,
-            "diff_min": None, "diff_max": None,
         }
+        entry.update(player_range_entry(p, hist_range_by_fanta_id, live_range_by_player, roles_by_fanta_id))
 
         if season_id:
             snap = latest_snapshot_by_player.get(p.id)
@@ -121,19 +152,6 @@ def list_players(
                 entry["fvm"] = hist_price.fvm
                 if hist_price.role:
                     entry["roles"] = [hist_price.role]
-        else:
-            if p.fanta_id and p.fanta_id in roles_by_fanta_id:
-                entry["roles"] = sorted(roles_by_fanta_id[p.fanta_id] | set(entry["roles"]))
-            ranges = []
-            if p.fanta_id and p.fanta_id in hist_range_by_fanta_id:
-                ranges.append(hist_range_by_fanta_id[p.fanta_id])
-            if p.id in live_range_by_player:
-                ranges.append(live_range_by_player[p.id])
-            for idx, (min_key, max_key) in enumerate([("price_min", "price_max"), ("fvm_min", "fvm_max"), ("diff_min", "diff_max")]):
-                values_min = [r[idx * 2] for r in ranges if r[idx * 2] is not None]
-                values_max = [r[idx * 2 + 1] for r in ranges if r[idx * 2 + 1] is not None]
-                entry[min_key] = min(values_min) if values_min else None
-                entry[max_key] = max(values_max) if values_max else None
 
         result.append(entry)
     return result

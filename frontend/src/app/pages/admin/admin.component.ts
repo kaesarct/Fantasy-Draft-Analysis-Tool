@@ -163,6 +163,55 @@ import { ApiService } from '../../core/services/api.service';
           }
         </div>
       }
+
+      <!-- Merge giocatori duplicati -->
+      <div class="section-title">🧩 Giocatori simili da verificare</div>
+      <div class="card mb-4 merge-panel">
+        <div class="merge-toolbar">
+          <button
+            pButton
+            label="Ricontrolla"
+            size="small"
+            class="p-button-outlined"
+            [loading]="loadingMergeCandidates()"
+            (click)="loadMergeCandidates()"
+          ></button>
+          <span class="text-muted" style="font-size:12px">{{ mergeCandidates().length }} coppie trovate</span>
+        </div>
+        @for (pair of mergeCandidates(); track pairKey(pair)) {
+          <div class="merge-pair">
+            @for (p of [pair.player_a, pair.player_b]; track p.id) {
+              <div class="merge-row" [class.empty-row]="!p.fanta_id">
+                <span class="merge-name">{{ p.name }}</span>
+                @if (p.roles?.length) {
+                  <span class="role-badge role-{{ p.roles[0] }}">{{ p.roles.join('/') }}</span>
+                }
+                @if (!p.fanta_id) {
+                  <span class="badge badge-red" style="font-size:10px">vuoto</span>
+                }
+                <span class="text-muted merge-stats">
+                  {{ p.price_min ?? '—' }}–{{ p.price_max ?? '—' }} ·
+                  FVM {{ p.fvm_min ?? '—' }}–{{ p.fvm_max ?? '—' }} ·
+                  Diff {{ p.diff_min ?? '—' }}/{{ p.diff_max ?? '—' }}
+                </span>
+                <button
+                  pButton
+                  size="small"
+                  label="Unisci qui"
+                  [loading]="mergingKey() === pairKey(pair)"
+                  (click)="mergeInto(p, pair)"
+                ></button>
+              </div>
+            }
+            <button class="dismiss-btn" (click)="dismissPair(pair)">Rifiuta — non è la stessa persona</button>
+          </div>
+        }
+        @empty {
+          @if (!loadingMergeCandidates()) {
+            <p class="text-muted" style="padding:20px;">Nessuna coppia sospetta trovata.</p>
+          }
+        }
+      </div>
     </div>
   `,
   styles: [`
@@ -219,6 +268,20 @@ import { ApiService } from '../../core/services/api.service';
     .assign-drop { min-width: 180px; }
     .primary-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
     .mb-4 { margin-bottom: 24px; }
+
+    .merge-panel { padding: 0; }
+    .merge-toolbar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border-subtle); }
+    .merge-pair { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); }
+    .merge-pair:last-child { border-bottom: none; }
+    .merge-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; flex-wrap: wrap; }
+    .merge-row.empty-row { opacity: 0.6; }
+    .merge-name { font-weight: 600; font-size: 13px; min-width: 140px; }
+    .merge-stats { font-size: 12px; flex: 1; min-width: 200px; }
+    .dismiss-btn {
+      background: none; border: none; cursor: pointer; color: var(--text-muted);
+      font-size: 12px; padding: 4px 0 0; text-decoration: underline;
+    }
+    .dismiss-btn:hover { color: var(--text-negative, #e05260); }
   `],
 })
 export class AdminComponent implements OnInit {
@@ -236,6 +299,10 @@ export class AdminComponent implements OnInit {
   message = signal('');
   messageIsError = signal(false);
 
+  mergeCandidates = signal<any[]>([]);
+  loadingMergeCandidates = signal(false);
+  mergingKey = signal<string | null>(null);
+
   newUsername = '';
   newDisplayName = '';
   newEmail = '';
@@ -249,6 +316,7 @@ export class AdminComponent implements OnInit {
     this.loadAllenatori();
     this.loadSeasons();
     this.loadDetectedMatchday();
+    this.loadMergeCandidates();
   }
 
   loadSeasons() {
@@ -413,6 +481,57 @@ export class AdminComponent implements OnInit {
         this.loadTeams();
       },
       error: err => this.setMessage(err.error?.detail || 'Errore rimozione.', true),
+    });
+  }
+
+  loadMergeCandidates() {
+    this.loadingMergeCandidates.set(true);
+    this.api.getPlayerMergeCandidates().subscribe({
+      next: pairs => {
+        this.mergeCandidates.set(pairs);
+        this.loadingMergeCandidates.set(false);
+      },
+      error: err => {
+        this.loadingMergeCandidates.set(false);
+        this.setMessage(err.error?.detail || 'Errore nel ricontrollo dei duplicati.', true);
+      },
+    });
+  }
+
+  pairKey(pair: any): string {
+    return `${pair.player_a.id}-${pair.player_b.id}`;
+  }
+
+  mergeInto(keep: any, pair: any) {
+    const remove = pair.player_a.id === keep.id ? pair.player_b : pair.player_a;
+    this.mergingKey.set(this.pairKey(pair));
+    this.api.mergePlayers(keep.id, remove.id).subscribe({
+      next: res => {
+        this.mergingKey.set(null);
+        if (res.merged) {
+          this.setMessage(`"${remove.name}" unito a "${keep.name}".`, false);
+        } else {
+          this.setMessage(
+            `Merge parziale: alcuni dati non ricollegati per conflitto (${JSON.stringify(res.conflicts)}). Non ho eliminato "${remove.name}".`,
+            true,
+          );
+        }
+        this.loadMergeCandidates();
+      },
+      error: err => {
+        this.mergingKey.set(null);
+        this.setMessage(err.error?.detail || 'Errore durante il merge.', true);
+      },
+    });
+  }
+
+  dismissPair(pair: any) {
+    this.api.dismissPlayerMerge(pair.player_a.id, pair.player_b.id).subscribe({
+      next: () => {
+        this.mergeCandidates.set(this.mergeCandidates().filter(p => this.pairKey(p) !== this.pairKey(pair)));
+        this.setMessage('Coppia rifiutata: non verrà più suggerita.', false);
+      },
+      error: err => this.setMessage(err.error?.detail || 'Errore nel rifiuto.', true),
     });
   }
 

@@ -39,6 +39,7 @@ def init_db():
         season_data,
         trade,
         auction,
+        player_merge,
     )
     Base.metadata.create_all(bind=engine)
     _migrate_add_leghe_id()

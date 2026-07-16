@@ -231,4 +231,17 @@ export class ApiService {
   getSeasonHistoryCsvUrl(seasonId: number, dataType: 'stats' | 'prices'): string {
     return `${this.base}/history/seasons/${seasonId}/${dataType}/csv`;
   }
+
+  // ── Merge giocatori duplicati ────────────────────────────────
+  getPlayerMergeCandidates(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/player-merge/candidates`);
+  }
+
+  mergePlayers(keepId: number, removeId: number): Observable<any> {
+    return this.http.post(`${this.base}/player-merge/merge`, { keep_id: keepId, remove_id: removeId });
+  }
+
+  dismissPlayerMerge(playerIdA: number, playerIdB: number): Observable<any> {
+    return this.http.post(`${this.base}/player-merge/dismiss`, { player_id_a: playerIdA, player_id_b: playerIdB });
+  }
 }
