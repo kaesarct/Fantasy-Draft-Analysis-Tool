@@ -45,8 +45,11 @@ def init_db():
     _migrate_widen_secondary_role()
     # L'ordine conta: normalizzare prima uniforma le eventuali coppie duplicate
     # che differiscono solo per maiuscole/minuscole (es. "ALBIOL" vs "Albiol"),
-    # cosi' la deduplica le riconosce come lo stesso nome.
+    # cosi' la deduplica le riconosce come lo stesso nome; il backfill usa il
+    # nome gia' normalizzato per il match e va prima della deduplica per
+    # sicurezza (nel caso rendesse due righe eleggibili per merge).
     _migrate_normalize_player_names()
+    _migrate_backfill_fanta_id()
     _migrate_dedupe_players()
 
 
@@ -153,5 +156,45 @@ def _migrate_normalize_player_names():
         db.commit()
         if normalized:
             logger.info("Normalizzati %s nomi giocatore da MAIUSCOLO a Title Case", normalized)
+    finally:
+        db.close()
+
+
+def _migrate_backfill_fanta_id():
+    """Alcuni Player creati dall'import storico rose non sono mai apparsi
+    nel sync live quotazioni (mai collegati a fanta_id, il sync live collega
+    solo per fanta_id, mai per nome) pur avendo statistiche/quotazioni/voti
+    storici identificabili per nome. Collega fanta_id solo quando il nome ha
+    un'unica corrispondenza non ambigua nelle tabelle storiche e quel
+    fanta_id non e' gia' usato da un'altra riga Player. Idempotente."""
+    from app.models.player import Player
+    from app.models.season_data import PlayerSeasonPrice, PlayerSeasonStat, PlayerSeasonVote
+
+    db = SessionLocal()
+    try:
+        used_fanta_ids = {
+            row[0] for row in db.query(Player.fanta_id).filter(Player.fanta_id.isnot(None)).all()
+        }
+
+        name_to_fanta_ids: dict[str, set[int]] = {}
+        for model in (PlayerSeasonPrice, PlayerSeasonStat, PlayerSeasonVote):
+            for name, fanta_id in db.query(model.player_name, model.fanta_player_id).distinct().all():
+                name_to_fanta_ids.setdefault(name, set()).add(fanta_id)
+
+        backfilled = 0
+        for p in db.query(Player).filter(Player.fanta_id.is_(None)).all():
+            candidates = name_to_fanta_ids.get(p.name)
+            if not candidates or len(candidates) != 1:
+                continue
+            fanta_id = next(iter(candidates))
+            if fanta_id in used_fanta_ids:
+                continue
+            p.fanta_id = fanta_id
+            used_fanta_ids.add(fanta_id)
+            backfilled += 1
+
+        db.commit()
+        if backfilled:
+            logger.info("Backfill fanta_id: %s giocatori collegati allo storico", backfilled)
     finally:
         db.close()
