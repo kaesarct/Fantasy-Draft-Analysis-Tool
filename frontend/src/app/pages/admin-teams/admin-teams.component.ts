@@ -6,14 +6,17 @@ import { InputTextModule } from 'primeng/inputtext';
 import { DropdownModule } from 'primeng/dropdown';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
+import { DragDropModule } from 'primeng/dragdrop';
 import { ApiService } from '../../core/services/api.service';
 
-const CUP_TYPES = ['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP'];
+// Gold/Bronze/Carbon hanno l'iscrizione automatica tramite FantaTeam.league_id:
+// tutte le altre competizioni (Silver, coppe...) vanno iscritte a mano qui.
+const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
 
 @Component({
   selector: 'app-admin-teams',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, InputTextModule, DropdownModule, ButtonModule, CheckboxModule],
+  imports: [CommonModule, FormsModule, RouterLink, InputTextModule, DropdownModule, ButtonModule, CheckboxModule, DragDropModule],
   template: `
     <div class="page-container fade-up">
       <div class="page-header">
@@ -72,7 +75,7 @@ const CUP_TYPES = ['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP'];
 
       @if (selectedSeasonId) {
         <!-- Associazioni -->
-        <div class="section-title">🔗 Associazioni squadra → allenatore</div>
+        <div class="section-title">🔗 Associazioni squadra → allenatore ({{ teams().length }})</div>
         <div class="team-table card mb-4">
           @for (t of teams(); track t.id) {
             <div class="team-row">
@@ -118,7 +121,7 @@ const CUP_TYPES = ['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP'];
         </div>
 
         <!-- Gestione squadre -->
-        <div class="section-title">🛡️ Gestione squadre</div>
+        <div class="section-title">🛡️ Gestione squadre ({{ teams().length }})</div>
         <div class="team-table card mb-4">
           @for (t of teams(); track t.id) {
             <div class="team-row">
@@ -223,12 +226,12 @@ const CUP_TYPES = ['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP'];
           }
         </div>
 
-        <!-- Iscrizioni coppe -->
-        <div class="section-title">🏆 Iscrizioni coppe</div>
+        <!-- Iscrizioni altre competizioni -->
+        <div class="section-title">🏆 Iscrizioni altre competizioni ({{ otherCompetitionOptions().length }})</div>
         <div class="card mb-4 cup-panel">
           <div class="filters-bar">
             <p-dropdown
-              [options]="cupCompetitionOptions()"
+              [options]="otherCompetitionOptions()"
               [(ngModel)]="selectedCompetitionId"
               placeholder="Competizione"
               (ngModelChange)="loadParticipants()"
@@ -237,33 +240,51 @@ const CUP_TYPES = ['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP'];
           </div>
           @if (selectedCompetitionId) {
             <div class="cup-body">
-              <div class="cup-list">
-                @for (p of participants(); track p.id) {
-                  <span class="assigned-chip">
-                    {{ p.name }}
-                    <button class="chip-btn" title="Rimuovi" (click)="removeParticipant(p)">×</button>
-                  </span>
-                }
-                @empty {
-                  <span class="text-muted" style="font-size:12px">nessuna squadra iscritta</span>
-                }
-              </div>
-              <div class="assign-controls">
-                <p-dropdown
-                  [options]="availableOptions()"
-                  [(ngModel)]="addParticipantId"
-                  placeholder="Aggiungi squadra"
-                  [filter]="true"
-                  styleClass="assign-drop"
-                  appendTo="body"
-                />
-                <button
-                  pButton
-                  label="Aggiungi"
-                  size="small"
-                  [disabled]="!addParticipantId"
-                  (click)="addParticipant()"
-                ></button>
+              <p class="text-muted" style="font-size:12px; margin: 0 0 4px;">
+                Trascina una squadra tra le due colonne per iscriverla o rimuoverla.
+              </p>
+              <div class="cup-columns">
+                <div
+                  class="cup-column"
+                  pDroppable="team"
+                  [class.drag-over]="dragOverColumn() === 'available'"
+                  (onDragEnter)="dragOverColumn.set('available')"
+                  (onDragLeave)="dragOverColumn.set(null)"
+                  (onDrop)="dropOn('available')"
+                >
+                  <div class="cup-column-title">Disponibili ({{ available().length }})</div>
+                  <div class="cup-list">
+                    @for (t of available(); track t.id) {
+                      <span class="assigned-chip draggable-chip" pDraggable="team" (onDragStart)="startDrag(t, 'available')">
+                        {{ t.name }}
+                      </span>
+                    }
+                    @empty {
+                      <span class="text-muted" style="font-size:12px">nessuna squadra disponibile</span>
+                    }
+                  </div>
+                </div>
+                <div
+                  class="cup-column"
+                  pDroppable="team"
+                  [class.drag-over]="dragOverColumn() === 'participants'"
+                  (onDragEnter)="dragOverColumn.set('participants')"
+                  (onDragLeave)="dragOverColumn.set(null)"
+                  (onDrop)="dropOn('participants')"
+                >
+                  <div class="cup-column-title">Iscritte ({{ participants().length }})</div>
+                  <div class="cup-list">
+                    @for (p of participants(); track p.id) {
+                      <span class="assigned-chip draggable-chip" pDraggable="team" (onDragStart)="startDrag(p, 'participants')">
+                        {{ p.name }}
+                        <button class="chip-btn" title="Rimuovi" (click)="removeParticipant(p)">×</button>
+                      </span>
+                    }
+                    @empty {
+                      <span class="text-muted" style="font-size:12px">nessuna squadra iscritta</span>
+                    }
+                  </div>
+                </div>
               </div>
             </div>
           }
@@ -339,7 +360,17 @@ const CUP_TYPES = ['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP'];
 
     .cup-panel { padding: 0; }
     .cup-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-    .cup-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .cup-list { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+    .cup-columns { display: flex; gap: 16px; flex-wrap: wrap; }
+    .cup-column {
+      flex: 1; min-width: 240px; min-height: 100px;
+      border: 1px dashed var(--border-color); border-radius: 8px; padding: 10px;
+      transition: background-color .15s, border-color .15s;
+    }
+    .cup-column.drag-over { background: var(--bg-elevated); border-color: var(--accent-green); }
+    .cup-column-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; }
+    .draggable-chip { cursor: grab; }
+    .draggable-chip:active { cursor: grabbing; }
   `],
 })
 export class AdminTeamsComponent implements OnInit {
@@ -368,7 +399,9 @@ export class AdminTeamsComponent implements OnInit {
   mergeTeamAId: number | null = null;
   mergeTeamBId: number | null = null;
   selectedCompetitionId: number | null = null;
-  addParticipantId: number | null = null;
+  dragOverColumn = signal<'available' | 'participants' | null>(null);
+  private draggedTeam: any | null = null;
+  private draggedFrom: 'available' | 'participants' | null = null;
 
   constructor(private api: ApiService) {}
 
@@ -434,9 +467,9 @@ export class AdminTeamsComponent implements OnInit {
     this.api.getSeasonCompetitions(this.selectedSeasonId).subscribe({ next: d => this.competitions.set(d) });
   }
 
-  cupCompetitionOptions() {
+  otherCompetitionOptions() {
     return this.competitions()
-      .filter(c => CUP_TYPES.includes(c.type))
+      .filter(c => !MAIN_LEAGUE_TYPES.includes(c.type))
       .map(c => ({ label: c.name, value: c.id }));
   }
 
@@ -591,17 +624,30 @@ export class AdminTeamsComponent implements OnInit {
     });
   }
 
-  availableOptions() {
-    return this.available().map(t => ({ label: t.name, value: t.id }));
+  startDrag(team: any, from: 'available' | 'participants') {
+    this.draggedTeam = team;
+    this.draggedFrom = from;
   }
 
-  addParticipant() {
-    if (!this.selectedCompetitionId || !this.addParticipantId) return;
-    this.api.addCompetitionParticipant(this.selectedCompetitionId, this.addParticipantId).subscribe({
-      next: () => {
-        this.addParticipantId = null;
-        this.loadParticipants();
-      },
+  dropOn(target: 'available' | 'participants') {
+    this.dragOverColumn.set(null);
+    const team = this.draggedTeam;
+    const from = this.draggedFrom;
+    this.draggedTeam = null;
+    this.draggedFrom = null;
+    if (!team || !from || from === target || !this.selectedCompetitionId) return;
+
+    if (target === 'participants') {
+      this.addCompetitionParticipant(team);
+    } else {
+      this.removeParticipant(team);
+    }
+  }
+
+  private addCompetitionParticipant(team: any) {
+    if (!this.selectedCompetitionId) return;
+    this.api.addCompetitionParticipant(this.selectedCompetitionId, team.id).subscribe({
+      next: () => this.loadParticipants(),
       error: err => this.setMessage(err.error?.detail || 'Errore aggiunta squadra.', true),
     });
   }
