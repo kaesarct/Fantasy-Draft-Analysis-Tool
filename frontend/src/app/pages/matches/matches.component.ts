@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-matches',
@@ -16,14 +17,16 @@ import { ApiService } from '../../core/services/api.service';
             <h1 class="page-title">📅 Partite Serie A</h1>
             <p class="text-secondary">Prossime partite e risultati</p>
           </div>
-          <button
-            pButton
-            label="Sync formazioni"
-            icon="pi pi-refresh"
-            [loading]="syncing()"
-            [disabled]="!currentSeasonId()"
-            (click)="syncFormazioni()"
-          ></button>
+          @if (auth.isAuthenticated()) {
+            <button
+              pButton
+              label="Sync formazioni"
+              icon="pi pi-refresh"
+              [loading]="syncing()"
+              [disabled]="!currentSeasonId()"
+              (click)="syncFormazioni()"
+            ></button>
+          }
         </div>
       </div>
 
@@ -125,7 +128,7 @@ export class MatchesComponent implements OnInit {
   syncIsError = signal(false);
   syncReport = signal<{ name: string; ok: boolean; detail: string }[]>([]);
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit() {
     this.api.getNextMatches().subscribe({

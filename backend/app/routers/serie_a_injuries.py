@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.serie_a_injury import SerieAInjuryReport, SerieAInjuryArchive
+from app.services.auth_service import require_admin
 from app.services.sync_service import sync_serie_a_injuries
 
 router = APIRouter(prefix="/serie-a-injuries", tags=["serie-a-injuries"])
@@ -16,7 +17,7 @@ def _descriptions_payload(descriptions):
 
 
 @router.post("/sync")
-def trigger_sync(db: Session = Depends(get_db)):
+def trigger_sync(db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     return sync_serie_a_injuries(db)
 
 
@@ -44,7 +45,7 @@ def list_active(db: Session = Depends(get_db)):
 
 
 @router.get("/archive")
-def list_archive(db: Session = Depends(get_db)):
+def list_archive(db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     archives = (
         db.query(SerieAInjuryArchive)
         .order_by(SerieAInjuryArchive.ended_at.desc())

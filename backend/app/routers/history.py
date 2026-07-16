@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services.auth_service import require_admin
 from app.services.season_import import DATA_TYPE_CONFIG, build_csv, import_season_data
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -21,6 +22,7 @@ def import_season(
     data_type: str = Query(..., description="'stats' o 'prices'"),
     force: bool = Query(False),
     db: Session = Depends(get_db),
+    _admin: str = Depends(require_admin),
 ):
     result = import_season_data(db, season_id, _validate_data_type(data_type), force)
     if not result["ok"]:

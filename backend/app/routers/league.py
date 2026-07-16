@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
 from app.models.competition import Competition, CompetitionStanding, MatchResult
+from app.services.auth_service import require_admin
 
 router = APIRouter(tags=["league"])
 
@@ -22,7 +23,7 @@ def list_seasons(db: Session = Depends(get_db)):
 
 
 @seasons_router.patch("/{season_id}/set-current")
-def set_current_season(season_id: int, db: Session = Depends(get_db)):
+def set_current_season(season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
         raise HTTPException(404, "Stagione non trovata")

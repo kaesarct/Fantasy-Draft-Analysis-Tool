@@ -6,6 +6,7 @@ from datetime import date
 from app.database import get_db
 from app.models.injury import InjuryPlayer
 from app.models.player import PlayerMatchScore
+from app.services.auth_service import require_admin
 from app.services.fanta_client import fanta_client
 from app.services.sync_service import sync_votes
 
@@ -43,7 +44,7 @@ def list_injuries(season_id: int | None = None, active_only: bool = True, db: Se
 
 
 @router.post("")
-def create_injury(payload: InjuryCreate, db: Session = Depends(get_db)):
+def create_injury(payload: InjuryCreate, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     existing = db.query(InjuryPlayer).filter(
         InjuryPlayer.player_id == payload.player_id,
         InjuryPlayer.season_id == payload.season_id,
@@ -69,7 +70,12 @@ def create_injury(payload: InjuryCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{injury_id}/recover")
-def mark_recovered(injury_id: int, confirmed_return: date, db: Session = Depends(get_db)):
+def mark_recovered(
+    injury_id: int,
+    confirmed_return: date,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_admin),
+):
     injury = db.query(InjuryPlayer).filter(InjuryPlayer.id == injury_id).first()
     if not injury:
         raise HTTPException(404)
@@ -80,7 +86,12 @@ def mark_recovered(injury_id: int, confirmed_return: date, db: Session = Depends
 
 
 @router.post("/check-recovery")
-def check_recovery(season_id: int, match_day: int | None = Query(None), db: Session = Depends(get_db)):
+def check_recovery(
+    season_id: int,
+    match_day: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_admin),
+):
     day = match_day if match_day is not None else fanta_client.get_last_matchday()
     if day < 0:
         raise HTTPException(502, "Impossibile determinare l'ultima giornata da fantacalcio.it")
@@ -118,7 +129,7 @@ def check_recovery(season_id: int, match_day: int | None = Query(None), db: Sess
 
 
 @router.delete("/{injury_id}")
-def delete_injury(injury_id: int, db: Session = Depends(get_db)):
+def delete_injury(injury_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     injury = db.query(InjuryPlayer).filter(InjuryPlayer.id == injury_id).first()
     if not injury:
         raise HTTPException(404)

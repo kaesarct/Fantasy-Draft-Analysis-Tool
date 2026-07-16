@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     upload_folder: str = "./uploads/logos/"
     cors_origins: list[str] = ["http://localhost:4200"]
 
+    # Auth (login admin — protegge sync/import/scrittura)
+    admin_username: str = ""
+    admin_password_hash: str = ""
+    jwt_secret: str = ""
+    jwt_expire_minutes: int = 60 * 24 * 30  # 30 giorni
+    cookie_secure: bool = True
+
     @property
     def database_url(self) -> str:
         return (

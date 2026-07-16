@@ -85,6 +85,9 @@ regola di proxy aggiuntiva né configurare CORS.
       in `docker-compose.yml` (`ft_user` / `ft_password`) — vedi passo 4.
 - [ ] Backup periodico del volume `pgdata` (Hyper Backup, o `pg_dump` schedulato
       con un task pianificato DSM).
+- [ ] Password dell'account admin dell'app (non DSM) **lunga e casuale** — il
+      login non ha rate-limiting, quindi una password debole è comunque
+      soggetta a forza bruta se l'app resta esposta a internet (vedi passo 4).
 
 ## 4. Portare il codice sul NAS
 
@@ -119,6 +122,16 @@ a mano sul NAS.
 
   Genera una password Postgres forte, ad es. `openssl rand -base64 24`, invece
   di riusare `ft_password`.
+
+  Genera anche `JWT_SECRET` (`openssl rand -hex 32`) e, **dopo** il primo avvio
+  del backend (serve l'immagine già buildata), `ADMIN_PASSWORD_HASH`:
+  ```bash
+  docker compose -f docker-compose.prod.yml exec backend python -m app.services.auth_service "la-tua-password"
+  ```
+  Imposta anche `ADMIN_USERNAME`. Senza questi tre valori il login admin (che
+  protegge sync/import/scrittura e il pannello Admin) rifiuta sempre le
+  credenziali. `COOKIE_SECURE` deve restare `true` in produzione (richiede
+  HTTPS, già garantito dal reverse proxy DSM del passo 2).
 
 Copia questi due `.env` sul NAS via SCP/SFTP (mai via Git):
 

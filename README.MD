@@ -47,6 +47,19 @@ cp .env.example .env
 
 > Un `FANTA_YEAR_QUOTAZIONI` sbagliato (es. una stagione futura non ancora pubblicata da fantacalcio.it) non da' errore: l'API risponde 200 OK ma con un Excel vuoto, e la sincronizzazione fallisce silenziosamente con "Download failed".
 
+Le funzioni di scrittura (sync, import storico, inserimento/gestione infortuni,
+pannello Admin) sono protette da un login admin. Genera l'hash della password e
+il secret JWT **prima del primo avvio**, altrimenti il login non funzionerà:
+
+```bash
+openssl rand -hex 32   # -> valore per JWT_SECRET
+# dopo il primo `docker-compose up` (serve l'immagine backend già buildata):
+docker compose exec backend python -m app.services.auth_service "la-tua-password"   # -> valore per ADMIN_PASSWORD_HASH
+```
+
+Inserisci in `.env`: `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`. Senza
+questi valori l'endpoint di login rifiuta sempre le credenziali.
+
 ### 3. Avvia i servizi
 
 ```bash

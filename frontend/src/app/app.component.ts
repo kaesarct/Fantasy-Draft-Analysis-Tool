@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { AuthService } from './core/services/auth.service';
 
 interface NavItem {
   label: string;
@@ -27,7 +28,7 @@ interface NavItem {
         </div>
 
         <ul class="nav-list">
-          @for (item of navItems; track item.route) {
+          @for (item of visibleNavItems(); track item.route) {
             <li>
               <a [routerLink]="item.route" routerLinkActive="active" class="nav-link">
                 <span class="nav-icon">{{ item.icon }}</span>
@@ -38,6 +39,14 @@ interface NavItem {
         </ul>
 
         <div class="sidebar-footer">
+          @if (auth.isAuthenticated()) {
+            <div class="auth-status">
+              <span class="text-muted" style="font-size:12px">👤 {{ auth.username() }}</span>
+              <a class="nav-link auth-link" (click)="logout()">🚪 Esci</a>
+            </div>
+          } @else {
+            <a class="nav-link auth-link" routerLink="/login">🔒 Accedi</a>
+          }
           <div class="sidebar-version">v1.0.0</div>
         </div>
       </nav>
@@ -142,6 +151,18 @@ interface NavItem {
       color: var(--text-muted);
     }
 
+    .auth-status {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .auth-link {
+      cursor: pointer;
+      padding: 6px 12px;
+    }
+
     /* ── Main content ─────────────────────────────────────── */
     .main-content {
       flex: 1;
@@ -150,7 +171,7 @@ interface NavItem {
     }
   `],
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   navItems: NavItem[] = [
     { label: 'Dashboard',   route: '/dashboard',  icon: '🏠' },
     { label: 'Classifica',  route: '/league',     icon: '🏆' },
@@ -162,4 +183,20 @@ export class AppComponent {
     { label: 'Storico',     route: '/history',    icon: '📊' },
     { label: 'Admin',       route: '/admin',      icon: '⚙️'  },
   ];
+
+  constructor(public auth: AuthService) {}
+
+  ngOnInit() {
+    this.auth.checkAuth();
+  }
+
+  visibleNavItems(): NavItem[] {
+    return this.auth.isAuthenticated()
+      ? this.navItems
+      : this.navItems.filter(item => item.route !== '/admin');
+  }
+
+  logout() {
+    this.auth.logout();
+  }
 }

@@ -7,6 +7,7 @@ import { DropdownModule } from 'primeng/dropdown';
 import { ButtonModule } from 'primeng/button';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 
 const STATS_COLUMNS = [
   { field: 'player_name', label: 'Giocatore' },
@@ -63,23 +64,25 @@ const PRICES_COLUMNS = [
           [(ngModel)]="search"
           (ngModelChange)="applyFilter()"
         />
-        <button
-          pButton
-          label="Importa da Fantacalcio"
-          icon="pi pi-download"
-          [loading]="importing()"
-          [disabled]="!selectedSeasonId || importingAll()"
-          (click)="importData()"
-        ></button>
-        <button
-          pButton
-          severity="secondary"
-          [label]="importingAll() ? 'Importazione ' + bulkProgress() : 'Importa tutto'"
-          icon="pi pi-cloud-download"
-          [loading]="importingAll()"
-          [disabled]="importing() || !seasonOptions().length"
-          (click)="importAll()"
-        ></button>
+        @if (auth.isAuthenticated()) {
+          <button
+            pButton
+            label="Importa da Fantacalcio"
+            icon="pi pi-download"
+            [loading]="importing()"
+            [disabled]="!selectedSeasonId || importingAll()"
+            (click)="importData()"
+          ></button>
+          <button
+            pButton
+            severity="secondary"
+            [label]="importingAll() ? 'Importazione ' + bulkProgress() : 'Importa tutto'"
+            icon="pi pi-cloud-download"
+            [loading]="importingAll()"
+            [disabled]="importing() || !seasonOptions().length"
+            (click)="importAll()"
+          ></button>
+        }
         <a
           *ngIf="selectedSeasonId && filtered().length"
           class="csv-link"
@@ -204,7 +207,7 @@ export class HistoryComponent implements OnInit {
     { label: 'Quotazioni', value: 'prices' },
   ];
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit() {
     this.api.getSeasons().subscribe({

@@ -156,6 +156,19 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/serie-a-injuries/archive`);
   }
 
+  // ── Auth ───────────────────────────────────────────────────
+  login(username: string, password: string): Observable<{ ok: boolean; username: string }> {
+    return this.http.post<{ ok: boolean; username: string }>(`${this.base}/auth/login`, { username, password });
+  }
+
+  logout(): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(`${this.base}/auth/logout`, null);
+  }
+
+  me(): Observable<{ authenticated: boolean; username: string }> {
+    return this.http.get<{ authenticated: boolean; username: string }>(`${this.base}/auth/me`);
+  }
+
   // ── Sync ───────────────────────────────────────────────────
   syncPrices(seasonId: number): Observable<any> {
     return this.http.post(`${this.base}/sync/prices`, null, {

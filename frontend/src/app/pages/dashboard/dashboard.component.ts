@@ -6,6 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -42,32 +43,34 @@ import { ApiService } from '../../core/services/api.service';
       </div>
 
       <!-- Sync -->
-      <div class="section-title">🔄 Sincronizzazione dati</div>
-      <div class="sync-bar card mb-4">
-        <button
-          pButton
-          label="Sync quotazioni"
-          icon="pi pi-euro"
-          [loading]="syncingPrices()"
-          [disabled]="!currentSeasonId() || syncingVotes()"
-          (click)="runSyncPrices()"
-        ></button>
-        <button
-          pButton
-          severity="secondary"
-          label="Sync voti"
-          icon="pi pi-star"
-          [loading]="syncingVotes()"
-          [disabled]="!currentSeasonId() || syncingPrices()"
-          (click)="runSyncVotes()"
-        ></button>
-        @if (!currentSeasonId()) {
-          <span class="text-muted" style="font-size:12px">Nessuna stagione corrente configurata</span>
-        }
-        @if (syncMessage()) {
-          <span class="sync-msg" [class.error]="syncIsError()">{{ syncMessage() }}</span>
-        }
-      </div>
+      @if (auth.isAuthenticated()) {
+        <div class="section-title">🔄 Sincronizzazione dati</div>
+        <div class="sync-bar card mb-4">
+          <button
+            pButton
+            label="Sync quotazioni"
+            icon="pi pi-euro"
+            [loading]="syncingPrices()"
+            [disabled]="!currentSeasonId() || syncingVotes()"
+            (click)="runSyncPrices()"
+          ></button>
+          <button
+            pButton
+            severity="secondary"
+            label="Sync voti"
+            icon="pi pi-star"
+            [loading]="syncingVotes()"
+            [disabled]="!currentSeasonId() || syncingPrices()"
+            (click)="runSyncVotes()"
+          ></button>
+          @if (!currentSeasonId()) {
+            <span class="text-muted" style="font-size:12px">Nessuna stagione corrente configurata</span>
+          }
+          @if (syncMessage()) {
+            <span class="sync-msg" [class.error]="syncIsError()">{{ syncMessage() }}</span>
+          }
+        </div>
+      }
 
       <!-- Next matches -->
       <div class="section-title">📅 Prossima giornata Serie A</div>
@@ -190,7 +193,7 @@ export class DashboardComponent implements OnInit {
     { icon: '📅',  label: 'Giornata corrente', value: null },
   ]);
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit() {
     this.api.getNextMatches().subscribe({

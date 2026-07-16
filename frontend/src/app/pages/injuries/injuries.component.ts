@@ -10,6 +10,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-injuries',
@@ -31,17 +32,19 @@ import { ApiService } from '../../core/services/api.service';
         </div>
       </div>
 
-      <div class="actions-bar mb-4">
-        <button pButton label="➕ Inserisci infortunato" (click)="openAddModal()"></button>
-        <button
-          pButton
-          label="🔄 Verifica recupero"
-          class="p-button-outlined"
-          [loading]="checkingRecovery()"
-          [disabled]="!currentSeasonId()"
-          (click)="checkRecovery()"
-        ></button>
-      </div>
+      @if (auth.isAuthenticated()) {
+        <div class="actions-bar mb-4">
+          <button pButton label="➕ Inserisci infortunato" (click)="openAddModal()"></button>
+          <button
+            pButton
+            label="🔄 Verifica recupero"
+            class="p-button-outlined"
+            [loading]="checkingRecovery()"
+            [disabled]="!currentSeasonId()"
+            (click)="checkRecovery()"
+          ></button>
+        </div>
+      }
 
       <!-- Legend -->
       <div class="legend card mb-4">
@@ -74,10 +77,12 @@ import { ApiService } from '../../core/services/api.service';
                 @if (!inj.is_active) {
                   <span class="badge badge-green">✓ Recuperato {{ inj.confirmed_return }}</span>
                 }
-                @if (inj.is_active) {
-                  <button class="btn-sm btn-outline" (click)="markRecovered(inj)">Segna rientro</button>
+                @if (auth.isAuthenticated()) {
+                  @if (inj.is_active) {
+                    <button class="btn-sm btn-outline" (click)="markRecovered(inj)">Segna rientro</button>
+                  }
+                  <button class="btn-sm btn-danger" (click)="deleteInjury(inj.id)">🗑</button>
                 }
-                <button class="btn-sm btn-danger" (click)="deleteInjury(inj.id)">🗑</button>
               </div>
             </div>
           }
@@ -103,16 +108,18 @@ import { ApiService } from '../../core/services/api.service';
       }
 
       <div class="section-title">🩺 Infortunati Serie A (ufficiale fantacalcio.it)</div>
-      <div class="actions-bar mb-3">
-        <button pButton label="🔄 Sincronizza" size="small" [loading]="syncingSerieA()" (click)="syncSerieA()"></button>
-        <button
-          pButton
-          [label]="showSerieAArchive ? 'Nascondi rientrati' : 'Mostra rientrati'"
-          size="small"
-          class="p-button-outlined"
-          (click)="toggleSerieAArchive()"
-        ></button>
-      </div>
+      @if (auth.isAuthenticated()) {
+        <div class="actions-bar mb-3">
+          <button pButton label="🔄 Sincronizza" size="small" [loading]="syncingSerieA()" (click)="syncSerieA()"></button>
+          <button
+            pButton
+            [label]="showSerieAArchive ? 'Nascondi rientrati' : 'Mostra rientrati'"
+            size="small"
+            class="p-button-outlined"
+            (click)="toggleSerieAArchive()"
+          ></button>
+        </div>
+      }
 
       @if (loadingSerieA()) {
         <p-skeleton height="60px" styleClass="mb-2" />
@@ -155,7 +162,7 @@ import { ApiService } from '../../core/services/api.service';
           }
         </div>
 
-        @if (showSerieAArchive) {
+        @if (auth.isAuthenticated() && showSerieAArchive) {
           <div class="section-title">Rientrati (Serie A)</div>
           <div class="returned-list">
             @for (a of serieAArchive(); track a.id) {
@@ -318,6 +325,7 @@ export class InjuriesComponent implements OnInit {
     private api: ApiService,
     private confirm: ConfirmationService,
     private toast: MessageService,
+    public auth: AuthService,
   ) {}
 
   ngOnInit() {

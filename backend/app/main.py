@@ -8,7 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
 from app.database import init_db
-from app.routers import players, teams, league, injuries, matches, sync, history, serie_a_injuries
+from app.routers import players, teams, league, injuries, matches, sync, history, serie_a_injuries, auth
 
 logging.basicConfig(level=settings.log_level.upper())
 logger = logging.getLogger(__name__)
@@ -89,6 +89,7 @@ app.include_router(matches.router, prefix=API_PREFIX)
 app.include_router(sync.router, prefix=API_PREFIX)
 app.include_router(history.router, prefix=API_PREFIX)
 app.include_router(serie_a_injuries.router, prefix=API_PREFIX)
+app.include_router(auth.router, prefix=API_PREFIX)
 
 
 @app.get("/api/health")
