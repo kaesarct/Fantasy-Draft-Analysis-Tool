@@ -94,3 +94,30 @@ npx ng serve
 
 Il backend ha un job `APScheduler` integrato che scarica in autonomia le "Quotazioni" e i "Voti" ogni giorno alle `23:00`.
 Puoi forzare la sincronizzazione in qualsiasi momento chiamando le API di sync (es. `POST /api/sync/prices?season_id=1`).
+
+## 🩺 Diagnostica delle chiamate esterne
+
+`backend/scripts/check_api.py` verifica, una per una, tutte le chiamate verso
+`fantacalcio.it` e `leghe.fantacalcio.it` usando le stesse funzioni dell'app: se
+il sito cambia HTML, endpoint o `app_key`, il guasto emerge qui invece che a
+sincronizzazione fallita. È di sola lettura (nessuna scrittura su DB, gli Excel
+vengono scaricati in una directory temporanea).
+
+```bash
+docker compose exec backend python -m scripts.check_api               # solo chiamate HTTP (~20s)
+docker compose exec backend python -m scripts.check_api --playwright  # aggiunge dashboard lega + formazioni (~1 min)
+```
+
+Esce con codice `1` se almeno un check è `FAIL`. Nello stack di sviluppo il
+codice del backend non è montato come volume: dopo aver modificato lo script
+serve `docker compose up -d --build backend` (oppure, per una prova veloce,
+`docker cp ./backend/scripts ft-platform-backend-1:/app/scripts`).
+
+Cosa copre:
+
+| Ambito | Check |
+| --- | --- |
+| fantacalcio.it pubblico | `live-serie-a` (ultima giornata + calendario), `probabili-formazioni-serie-a`, `infortunati-serie-a` — verifica che i selettori HTML esistano ancora |
+| fantacalcio.it API | `POST api/v1/User/login`, `Excel/prices`, `Excel/stats`, `Excel/votes` — segnala il caso "200 OK ma file da 0 byte" |
+| leghe.fantacalcio.it | raggiungibilità pagina lega, discovery `authAppKey`, `POST apileague/onboarding/v1/login`, validità e scadenza del session file Playwright |
+| leghe con browser (`--playwright`) | dropdown competizioni della dashboard, intercettazione `V1_LegheFormazioni/Pagina` |
