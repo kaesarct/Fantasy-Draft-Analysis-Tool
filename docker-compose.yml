@@ -17,6 +17,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # Senza questa policy, dopo un riavvio del daemon Docker tornano su backend e
+    # frontend ma non il db: il backend resta in restart loop e ogni chiamata API
+    # fallisce con "could not translate host name db".
+    restart: unless-stopped
 
   # ── FastAPI Backend ─────────────────────────────────────────
   backend:

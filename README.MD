@@ -95,6 +95,30 @@ npx ng serve
 Il backend ha un job `APScheduler` integrato che scarica in autonomia le "Quotazioni" e i "Voti" ogni giorno alle `23:00`.
 Puoi forzare la sincronizzazione in qualsiasi momento chiamando le API di sync (es. `POST /api/sync/prices?season_id=1`).
 
+## 🔑 Sessione leghe.fantacalcio.it
+
+Il download delle formazioni usa un browser autenticato (Playwright): l'endpoint
+`V1_LegheFormazioni/Pagina` rifiuta le chiamate HTTP dirette. La sessione viene
+salvata in `backend/session/tamarros_session.json` (montata nel container come
+`/app/session`) e va rigenerata quando i cookie scadono — durano circa una settimana:
+
+```bash
+docker compose exec backend python capture_login_session.py
+```
+
+Il login è automatico e headless (il form leghe non ha captcha), quindi gira nel
+container. Se il sito cambia il form o introduce un captcha, resta il fallback
+manuale con browser visibile, da eseguire **sull'host**:
+
+```bash
+cd backend && python capture_login_session.py --manual
+```
+
+> Il mount della sessione è una **directory** (`./backend/session:/app/session`),
+> non un file: un bind mount su un file inesistente fa creare a Docker una
+> directory al suo posto, e ogni lettura della sessione fallisce con
+> `IsADirectoryError`.
+
 ## 🩺 Diagnostica delle chiamate esterne
 
 `backend/scripts/check_api.py` verifica, una per una, tutte le chiamate verso
@@ -119,5 +143,10 @@ Cosa copre:
 | --- | --- |
 | fantacalcio.it pubblico | `live-serie-a` (ultima giornata + calendario), `probabili-formazioni-serie-a`, `infortunati-serie-a` — verifica che i selettori HTML esistano ancora |
 | fantacalcio.it API | `POST api/v1/User/login`, `Excel/prices`, `Excel/stats`, `Excel/votes` — segnala il caso "200 OK ma file da 0 byte" |
-| leghe.fantacalcio.it | raggiungibilità pagina lega, discovery `authAppKey`, `POST apileague/onboarding/v1/login`, validità e scadenza del session file Playwright |
+| leghe.fantacalcio.it | homepage leghe, discovery `authAppKey`, `POST apileague/onboarding/v1/login`, alias lega confrontato con le leghe dell'utente, `league/competitions`, validità e scadenza del session file |
 | leghe con browser (`--playwright`) | dropdown competizioni della dashboard, intercettazione `V1_LegheFormazioni/Pagina` |
+
+I `WARN` di pre-stagione sono attesi: senza giornate giocate non ci sono voti da
+scaricare, e finché non crei le competizioni in lega il dropdown è vuoto. Il
+conteggio via `league/competitions` serve proprio a distinguere quel caso da una
+sessione scaduta, che dalla sola dashboard sono indistinguibili.
