@@ -13,6 +13,7 @@ autenticato (dashboard competizioni + V1_LegheFormazioni/Pagina): sono lenti
 """
 import json
 import os
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ import requests
 from app.config import settings
 from app.services import seriea_scraper
 from app.services.fanta_client import fanta_client
-from app.services.leghe_client import LegheClient
+from app.services.leghe_client import LegheClient, SessionExpired
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 XLSX_MAGIC = b"PK\x03\x04"
@@ -148,24 +149,25 @@ def check_excel_votes(tmpdir: str):
 
 
 # ── leghe.fantacalcio.it ────────────────────────────────────────────────────
-def check_leghe_page():
-    url = f"{settings.fanta_leghe_base_url}{settings.fanta_lega_name}"
-    if not settings.fanta_lega_name:
-        return FAIL, "FANTA_LEGA_NAME non configurato"
-    resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+def check_leghe_home():
+    resp = requests.get(settings.fanta_leghe_base_url, timeout=15)
     if not resp.ok:
-        return FAIL, f"HTTP {resp.status_code} su {url}"
-    return OK, f"HTTP {resp.status_code} su {url} ({len(resp.content)} byte)"
+        return FAIL, f"HTTP {resp.status_code} su {settings.fanta_leghe_base_url}"
+    return OK, f"HTTP {resp.status_code} ({len(resp.content)} byte)"
 
 
 def check_app_key(state: dict):
     def _check():
         client = LegheClient()
         state["client"] = client
-        key = client.session.headers["app_key"]
-        if key == settings.fanta_app_key_fallback:
-            return WARN, "authAppKey non trovato nell'HTML: in uso il fallback hardcoded"
-        return OK, f"authAppKey letto dalla pagina lega ({key[:6]}…)"
+        html = requests.get(settings.fanta_leghe_base_url, timeout=15).text
+        match = re.search(r'authAppKey"?\s*:\s*"([^"]+)"', html)
+        if not match:
+            return WARN, "authAppKey assente dalla homepage leghe: in uso il fallback di config.py"
+        key = match.group(1)
+        if key != settings.fanta_app_key_fallback:
+            return OK, f"authAppKey letto dalla homepage ({key[:8]}…) — diverso dal fallback in config.py"
+        return OK, f"authAppKey letto dalla homepage ({key[:8]}…), allineato al fallback"
 
     return _check
 
@@ -175,8 +177,26 @@ def check_leghe_login(state: dict):
         client = state.get("client") or LegheClient()
         state["client"] = client
         utente = client.login()
-        nome = utente.get("nome") or utente.get("username") or "?"
-        return OK, f"login apileague OK — utente '{nome}', id={utente.get('id')}"
+        return OK, f"utente '{utente.get('username')}', id={utente.get('id')}, {len(client.leghe)} leghe"
+
+    return _check
+
+
+def check_lega_alias(state: dict):
+    def _check():
+        if not settings.fanta_lega_name:
+            return FAIL, "FANTA_LEGA_NAME non configurato: le chiamate leghe puntano alla homepage"
+        client = state.get("client")
+        if client is None or not client.leghe:
+            return WARN, f"alias '{settings.fanta_lega_name}' non verificabile: login leghe non riuscito"
+        lega = next((l for l in client.leghe if l.get("alias") == settings.fanta_lega_name), None)
+        if lega is None:
+            alias = ", ".join(l.get("alias", "?") for l in client.leghe) or "nessuna"
+            return FAIL, f"alias '{settings.fanta_lega_name}' non tra le leghe dell'utente ({alias})"
+        return OK, (
+            f"'{lega['nome']}' → alias={lega['alias']}, id_lega={lega['id']}, "
+            f"id_squadra={lega['id_squadra']}"
+        )
 
     return _check
 
@@ -207,11 +227,47 @@ def check_session_file():
     return OK, f"{len(cookies)} cookie di sola sessione (nessuna scadenza)"
 
 
+def check_competizioni_api(state: dict):
+    """Conteggio competizioni dalla REST API: distingue "nessuna competizione
+    creata" da "discovery HTML rotta", che dalla dashboard sono indistinguibili."""
+
+    def _check():
+        client = state.get("client")
+        if client is None or not client.leghe:
+            return WARN, "login leghe non riuscito: conteggio competizioni non verificabile"
+        lega = next((l for l in client.leghe if l.get("alias") == settings.fanta_lega_name), None)
+        if lega is None or not lega.get("jwt"):
+            return WARN, "jwt di lega non disponibile: conteggio competizioni non verificabile"
+        resp = requests.get(
+            "https://apileague.fantacalcio.it/onboarding/v1/league/competitions",
+            headers={
+                "app_key": client.session.headers["app_key"],
+                "authorization": f"Bearer {lega['jwt']}",
+                "accept": "application/json",
+            },
+            timeout=15,
+        )
+        if not resp.ok:
+            return FAIL, f"HTTP {resp.status_code}: {resp.text[:120]}"
+        competizioni = resp.json()
+        state["n_comp_api"] = len(competizioni)
+        if not competizioni:
+            return WARN, "0 competizioni create in lega per questa stagione"
+        return OK, f"{len(competizioni)} competizioni in lega"
+
+    return _check
+
+
 def check_competizioni(state: dict):
     def _check():
         client = state.get("client") or LegheClient()
         state["client"] = client
-        competizioni = client.discover_competizioni()
+        try:
+            competizioni = client.discover_competizioni()
+        except SessionExpired:
+            if state.get("n_comp_api") == 0:
+                return WARN, "dropdown vuoto, coerente con 0 competizioni create in lega"
+            raise
         state["competizioni"] = competizioni
         elenco = ", ".join(f"{n}={i}" for n, i in competizioni.items())
         return OK, f"{len(competizioni)} competizioni — {elenco}"
@@ -262,9 +318,11 @@ def main() -> int:
 
     print("\n── leghe.fantacalcio.it ──────────────────────────────────────────")
     state: dict = {}
-    run("GET pagina lega", check_leghe_page)
+    run("GET homepage leghe", check_leghe_home)
     run("discovery authAppKey", check_app_key(state))
     run("POST apileague/onboarding/v1/login", check_leghe_login(state))
+    run("alias lega configurato", check_lega_alias(state))
+    run("GET onboarding/v1/league/competitions", check_competizioni_api(state))
     run(f"session file ({settings.fanta_session_file})", check_session_file)
 
     if con_playwright:

@@ -8,3 +8,5 @@ node_modules/
 tamarros_session.json
 backend/downloads/
 backend/uploads/
+backend/session/*.json
+.env.bak.*

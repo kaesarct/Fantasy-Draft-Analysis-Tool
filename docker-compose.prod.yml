@@ -36,7 +36,7 @@ services:
       FANTA_PASSWORD: ${FANTA_PASSWORD:-}
       FANTA_YEAR_QUOTAZIONI: ${FANTA_YEAR_QUOTAZIONI:-24}
       FANTA_LEGA_NAME: ${FANTA_LEGA_NAME:-}
-      FANTA_SESSION_FILE: /app/tamarros_session.json
+      FANTA_SESSION_FILE: /app/session/tamarros_session.json
       LOG_LEVEL: INFO
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:4200"]}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
@@ -47,7 +47,9 @@ services:
     volumes:
       - ./backend/downloads:/app/downloads
       - ./backend/uploads:/app/uploads
-      - ./backend/tamarros_session.json:/app/tamarros_session.json
+      # Directory, non file: un bind mount su un file inesistente fa creare a
+      # Docker una directory al suo posto, e la sessione diventa illeggibile.
+      - ./backend/session:/app/session
     depends_on:
       db:
         condition: service_healthy

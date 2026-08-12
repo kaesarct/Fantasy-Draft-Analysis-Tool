@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     fanta_year_quotazioni: str = "24"
     fanta_lega_name: str = ""
     fanta_session_file: str = "./tamarros_session.json"
-    fanta_app_key_fallback: str = "bZ2FAQDZYYBVEehhFuM9pAsJ3waL0Vsg"
+    # Usata solo se la discovery dell'authAppKey dalla homepage leghe fallisce.
+    # Se il login apileague risponde 401 e' probabile che sia scaduta: rileggila
+    # con `python -m scripts.check_api` e aggiorna il valore qui.
+    fanta_app_key_fallback: str = "ICiELOObd5DF5uJEATi77CRvHiiRuMU0"
 
     # App
     debug: bool = False

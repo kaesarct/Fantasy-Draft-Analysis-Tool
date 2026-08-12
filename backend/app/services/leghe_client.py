@@ -44,15 +44,19 @@ class LegheClient:
             }
         )
         self.utente = None
+        self.leghe: list[dict] = []
 
     def _discover_app_key(self) -> str:
         # authAppKey e' iniettato dal server nell'HTML (script#serverBridge), non nei bundle JS:
         # piu' stabile da leggere da li' che affidarsi a una chiave fissa nel codice.
+        # Va letta dalla homepage leghe: la pagina della lega redirige a /view/dashboard
+        # e risponde 404 alle richieste non autenticate, quindi non espone la chiave.
         try:
-            res = self.session.get(self.lega_page_url, timeout=10)
+            res = self.session.get(settings.fanta_leghe_base_url, timeout=10)
             match = re.search(r'authAppKey"?\s*:\s*"([^"]+)"', res.text)
             if match:
                 return match.group(1)
+            logger.warning("authAppKey non trovato nella homepage leghe, uso il fallback")
         except requests.RequestException as e:
             logger.warning("Discovery app_key fallita, uso il fallback: %s", e)
         return settings.fanta_app_key_fallback
@@ -74,6 +78,7 @@ class LegheClient:
             raise RuntimeError(f"Login fallito: {data}")
 
         self.utente = data["data"]["utente"]
+        self.leghe = data["data"].get("leghe") or []
         logger.debug("Login leghe avvenuto con successo")
         return self.utente
 
