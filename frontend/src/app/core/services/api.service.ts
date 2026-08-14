@@ -241,8 +241,16 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/player-merge/candidates`);
   }
 
-  mergePlayers(keepId: number, removeId: number): Observable<any> {
-    return this.http.post(`${this.base}/player-merge/merge`, { keep_id: keepId, remove_id: removeId });
+  mergePlayers(
+    keepId: number,
+    removeId: number,
+    resolutions: { table: string; key_values: Record<string, number>; winner: 'keep' | 'remove' }[] = [],
+  ): Observable<any> {
+    return this.http.post(`${this.base}/player-merge/merge`, {
+      keep_id: keepId,
+      remove_id: removeId,
+      resolutions,
+    });
   }
 
   dismissPlayerMerge(playerIdA: number, playerIdB: number): Observable<any> {

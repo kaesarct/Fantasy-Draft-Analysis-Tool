@@ -7,6 +7,27 @@ import { DropdownModule } from 'primeng/dropdown';
 import { ButtonModule } from 'primeng/button';
 import { ApiService } from '../../core/services/api.service';
 
+interface ConflictDiffEntry {
+  keep: unknown;
+  remove: unknown;
+}
+
+interface ConflictItem {
+  table: string;
+  key_values: Record<string, number>;
+  diff: Record<string, ConflictDiffEntry>;
+  choice: 'keep' | 'remove' | null;
+}
+
+interface PendingMerge {
+  keepId: number;
+  removeId: number;
+  keepName: string;
+  removeName: string;
+  items: ConflictItem[];
+  unresolved: { table: string; key_values: Record<string, number>; reason: string }[];
+}
+
 @Component({
   selector: 'app-admin',
   standalone: true,
@@ -21,6 +42,50 @@ import { ApiService } from '../../core/services/api.service';
 
       @if (message()) {
         <div class="card mb-4 status-msg" [class.error]="messageIsError()">{{ message() }}</div>
+      }
+
+      @if (pendingMerge(); as pm) {
+        <div class="card mb-4 conflict-panel">
+          <div class="conflict-header">
+            <strong>Risolvi i conflitti: "{{ pm.keepName }}" ↔ "{{ pm.removeName }}"</strong>
+            <button class="dismiss-btn" (click)="cancelConflictResolution()">Annulla</button>
+          </div>
+          @for (item of pm.items; track item) {
+            <div class="conflict-item">
+              <div class="text-muted conflict-meta">{{ item.table }} — {{ item.key_values | json }}</div>
+              @for (kv of item.diff | keyvalue; track kv.key) {
+                <div class="conflict-row">
+                  <span class="conflict-col">{{ kv.key }}</span>
+                  <span class="conflict-val">{{ pm.keepName }}: <strong>{{ kv.value.keep }}</strong></span>
+                  <span class="conflict-val">{{ pm.removeName }}: <strong>{{ kv.value.remove }}</strong></span>
+                </div>
+              }
+              <div class="conflict-choice">
+                <button
+                  pButton size="small" [label]="'Tieni ' + pm.keepName"
+                  [class.p-button-outlined]="item.choice !== 'keep'"
+                  (click)="chooseConflictWinner(item, 'keep')"
+                ></button>
+                <button
+                  pButton size="small" [label]="'Tieni ' + pm.removeName"
+                  [class.p-button-outlined]="item.choice !== 'remove'"
+                  (click)="chooseConflictWinner(item, 'remove')"
+                ></button>
+              </div>
+            </div>
+          }
+          @if (pm.unresolved.length) {
+            <p class="conflict-unresolved">Non risolvibile automaticamente: {{ pm.unresolved[0].reason }}</p>
+          }
+          <div class="conflict-footer">
+            <button
+              pButton size="small" label="Applica e completa merge"
+              [disabled]="!allConflictsChosen()"
+              [loading]="resolvingConflict()"
+              (click)="confirmConflictResolutions()"
+            ></button>
+          </div>
+        </div>
       }
 
       <!-- Stagione e sincronizzazione -->
@@ -221,6 +286,21 @@ import { ApiService } from '../../core/services/api.service';
 
     .manual-pick { display: flex; align-items: center; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
     .manual-drop { min-width: 220px; }
+
+    .conflict-panel { padding: 0; border: 1px solid var(--border-subtle); }
+    .conflict-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); font-size: 13px;
+    }
+    .conflict-item { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); }
+    .conflict-item:last-of-type { border-bottom: none; }
+    .conflict-meta { font-size: 12px; margin-bottom: 6px; }
+    .conflict-row { display: flex; align-items: center; gap: 16px; font-size: 12px; padding: 2px 0; }
+    .conflict-col { min-width: 140px; font-weight: 600; }
+    .conflict-val { flex: 1; }
+    .conflict-choice { display: flex; gap: 8px; margin-top: 8px; }
+    .conflict-unresolved { padding: 10px 16px; margin: 0; font-size: 12px; color: var(--text-negative, #e05260); }
+    .conflict-footer { padding: 12px 16px; }
   `],
 })
 export class AdminComponent implements OnInit {
@@ -239,6 +319,8 @@ export class AdminComponent implements OnInit {
   loadingMergeCandidates = signal(false);
   mergingKey = signal<string | null>(null);
   allPlayersForMerge = signal<any[]>([]);
+  pendingMerge = signal<PendingMerge | null>(null);
+  resolvingConflict = signal(false);
 
   syncSeasonId: number | null = null;
   syncMatchDay: number | null = null;
@@ -371,24 +453,7 @@ export class AdminComponent implements OnInit {
   mergeInto(keep: any, pair: any) {
     const remove = pair.player_a.id === keep.id ? pair.player_b : pair.player_a;
     this.mergingKey.set(this.pairKey(pair));
-    this.api.mergePlayers(keep.id, remove.id).subscribe({
-      next: res => {
-        this.mergingKey.set(null);
-        if (res.merged) {
-          this.setMessage(`"${remove.name}" unito a "${keep.name}".`, false);
-        } else {
-          this.setMessage(
-            `Merge parziale: alcuni dati non ricollegati per conflitto (${JSON.stringify(res.conflicts)}). Non ho eliminato "${remove.name}".`,
-            true,
-          );
-        }
-        this.loadMergeCandidates();
-      },
-      error: err => {
-        this.mergingKey.set(null);
-        this.setMessage(err.error?.detail || 'Errore durante il merge.', true);
-      },
-    });
+    this.submitMerge(keep.id, remove.id, keep.name, remove.name, []);
   }
 
   loadAllPlayersForMerge() {
@@ -411,17 +476,37 @@ export class AdminComponent implements OnInit {
   mergeManualInto(keep: any, pair: any) {
     const remove = pair.player_a.id === keep.id ? pair.player_b : pair.player_a;
     this.mergingKey.set(this.pairKey(pair));
-    this.api.mergePlayers(keep.id, remove.id).subscribe({
+    this.submitMerge(keep.id, remove.id, keep.name, remove.name, [], () => {
+      this.manualPlayerAId = null;
+      this.manualPlayerBId = null;
+      this.loadAllPlayersForMerge();
+    });
+  }
+
+  private submitMerge(
+    keepId: number,
+    removeId: number,
+    keepName: string,
+    removeName: string,
+    resolutions: { table: string; key_values: Record<string, number>; winner: 'keep' | 'remove' }[],
+    onMerged?: () => void,
+  ) {
+    this.api.mergePlayers(keepId, removeId, resolutions).subscribe({
       next: res => {
         this.mergingKey.set(null);
+        this.resolvingConflict.set(false);
         if (res.merged) {
-          this.setMessage(`"${remove.name}" unito a "${keep.name}".`, false);
-          this.manualPlayerAId = null;
-          this.manualPlayerBId = null;
-          this.loadAllPlayersForMerge();
+          this.pendingMerge.set(null);
+          this.setMessage(`"${removeName}" unito a "${keepName}".`, false);
+          onMerged?.();
         } else {
+          this.pendingMerge.set({
+            keepId, removeId, keepName, removeName,
+            items: (res.conflicts ?? []).map((c: any) => ({ ...c, choice: null })),
+            unresolved: res.unresolved ?? [],
+          });
           this.setMessage(
-            `Merge parziale: alcuni dati non ricollegati per conflitto (${JSON.stringify(res.conflicts)}). Non ho eliminato "${remove.name}".`,
+            `Merge parziale: ${res.conflicts?.length ?? 0} conflitto/i da risolvere prima di completare l'unione di "${removeName}" in "${keepName}".`,
             true,
           );
         }
@@ -429,9 +514,31 @@ export class AdminComponent implements OnInit {
       },
       error: err => {
         this.mergingKey.set(null);
+        this.resolvingConflict.set(false);
         this.setMessage(err.error?.detail || 'Errore durante il merge.', true);
       },
     });
+  }
+
+  chooseConflictWinner(item: ConflictItem, winner: 'keep' | 'remove') {
+    item.choice = winner;
+  }
+
+  allConflictsChosen(): boolean {
+    const pm = this.pendingMerge();
+    return !!pm && pm.items.length > 0 && pm.items.every(i => !!i.choice);
+  }
+
+  confirmConflictResolutions() {
+    const pm = this.pendingMerge();
+    if (!pm || !this.allConflictsChosen()) return;
+    this.resolvingConflict.set(true);
+    const resolutions = pm.items.map(i => ({ table: i.table, key_values: i.key_values, winner: i.choice! }));
+    this.submitMerge(pm.keepId, pm.removeId, pm.keepName, pm.removeName, resolutions);
+  }
+
+  cancelConflictResolution() {
+    this.pendingMerge.set(null);
   }
 
   dismissPair(pair: any) {

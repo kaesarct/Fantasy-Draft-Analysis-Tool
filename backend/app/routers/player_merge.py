@@ -7,9 +7,11 @@ non rischiare di fondere due giocatori realmente distinti con lo stesso
 cognome."""
 import re
 from datetime import datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -136,9 +138,34 @@ _UNIQUE_TABLES = [
 ]
 
 
+def _row_diff(model, keep_row, remove_row, fk_field: str) -> dict[str, dict[str, Any]]:
+    """Colonne che differiscono tra le due righe in conflitto (escluse id e fk_field).
+    Generico: riusabile per tutti i modelli di _UNIQUE_TABLES."""
+    excluded = {"id", fk_field}
+    diff: dict[str, dict[str, Any]] = {}
+    for col in model.__table__.columns:
+        if col.name in excluded:
+            continue
+        kv, rv = getattr(keep_row, col.name), getattr(remove_row, col.name)
+        if kv != rv:
+            diff[col.name] = {"keep": kv, "remove": rv}
+    return diff
+
+
+def _resolution_key(table: str, key_values: dict[str, int]) -> tuple:
+    return (table, tuple(sorted(key_values.items())))
+
+
+class ConflictResolution(BaseModel):
+    table: str
+    key_values: dict[str, int]
+    winner: Literal["keep", "remove"]
+
+
 class MergeRequest(BaseModel):
     keep_id: int
     remove_id: int
+    resolutions: list[ConflictResolution] = []
 
 
 @router.post("/merge")
@@ -151,8 +178,18 @@ def merge_players(payload: MergeRequest, db: Session = Depends(get_db), _admin: 
     if not keep or not remove:
         raise HTTPException(404, "Giocatore non trovato")
 
+    known_tables = {model.__tablename__ for model, _, _ in _UNIQUE_TABLES}
+    unknown = [r.table for r in payload.resolutions if r.table not in known_tables]
+    if unknown:
+        raise HTTPException(400, f"Tabella di risoluzione non valida: {unknown[0]}")
+
+    resolutions_by_key = {
+        _resolution_key(r.table, r.key_values): r.winner for r in payload.resolutions
+    }
+
     relinked: dict[str, int] = {}
-    conflicts: dict[str, int] = {}
+    conflicts: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
 
     for model, fk_field in _SIMPLE_TABLES:
         count = (
@@ -164,26 +201,55 @@ def merge_players(payload: MergeRequest, db: Session = Depends(get_db), _admin: 
             relinked[model.__tablename__] = count
 
     for model, fk_field, key_fields in _UNIQUE_TABLES:
+        table_name = model.__tablename__
         rows = db.query(model).filter(getattr(model, fk_field) == payload.remove_id).all()
-        moved = skipped = 0
+        moved = 0
         for row in rows:
-            conflict = (
+            key_values = {f: getattr(row, f) for f in key_fields}
+            conflict_row = (
                 db.query(model)
                 .filter(
                     getattr(model, fk_field) == payload.keep_id,
-                    *[getattr(model, f) == getattr(row, f) for f in key_fields],
+                    *[getattr(model, f) == key_values[f] for f in key_fields],
                 )
                 .first()
             )
-            if conflict:
-                skipped += 1
+            if not conflict_row:
+                setattr(row, fk_field, payload.keep_id)
+                moved += 1
                 continue
-            setattr(row, fk_field, payload.keep_id)
-            moved += 1
+
+            winner = resolutions_by_key.get(_resolution_key(table_name, key_values))
+            if winner is None:
+                conflicts.append({
+                    "table": table_name, "key_values": key_values,
+                    "diff": _row_diff(model, conflict_row, row, fk_field),
+                })
+                continue
+
+            loser_row = row if winner == "keep" else conflict_row
+            try:
+                with db.begin_nested():
+                    db.delete(loser_row)
+                    db.flush()
+            except IntegrityError:
+                unresolved.append({
+                    "table": table_name, "key_values": key_values,
+                    "reason": "riga ancora referenziata da un'altra tabella; va risolta a mano",
+                })
+                conflicts.append({
+                    "table": table_name, "key_values": key_values,
+                    "diff": _row_diff(model, conflict_row, row, fk_field),
+                })
+                continue
+
+            if winner == "remove":
+                setattr(row, fk_field, payload.keep_id)
+                moved += 1
+            # winner == "keep": la riga perdente (row) e' stata gia' cancellata sopra
+
         if moved:
-            relinked[model.__tablename__] = moved
-        if skipped:
-            conflicts[model.__tablename__] = skipped
+            relinked[table_name] = relinked.get(table_name, 0) + moved
 
     db.flush()
 
@@ -197,7 +263,7 @@ def merge_players(payload: MergeRequest, db: Session = Depends(get_db), _admin: 
 
     if still_referenced:
         db.commit()
-        return {"merged": False, "relinked": relinked, "conflicts": conflicts}
+        return {"merged": False, "relinked": relinked, "conflicts": conflicts, "unresolved": unresolved}
 
     low, high = _ordered_pair(payload.keep_id, payload.remove_id)
     db.query(PlayerMergeDismissal).filter(
