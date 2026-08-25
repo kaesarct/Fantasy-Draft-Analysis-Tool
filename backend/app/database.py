@@ -42,6 +42,7 @@ def init_db():
         player_merge,
     )
     Base.metadata.create_all(bind=engine)
+    _migrate_add_lineage_id()
     _migrate_add_leghe_id()
     _migrate_widen_secondary_role()
     _migrate_widen_price_secondary_role()
@@ -55,6 +56,17 @@ def init_db():
     _migrate_backfill_unknown_role()
     _migrate_dedupe_players()
     _migrate_merge_duplicate_teams()
+
+
+def _migrate_add_lineage_id():
+    # create_all crea la nuova tabella fanta_team_lineages da se', ma non
+    # altera fanta_teams (tabella esistente): la colonna va aggiunta a mano.
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE fanta_teams ADD COLUMN IF NOT EXISTS lineage_id "
+            "INTEGER REFERENCES fanta_team_lineages(id)"
+        ))
 
 
 def _migrate_add_leghe_id():

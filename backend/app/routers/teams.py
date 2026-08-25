@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.fanta_allenatore import FantaAllenatore
-from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaRoster, League
+from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaRoster, League, FantaTeamLineage
 from app.services.auth_service import require_admin
 from app.routers.team_merge import _SIMPLE_TABLES, _UNIQUE_TABLES
 
@@ -117,7 +117,7 @@ def list_fanta_teams(
 ):
     q = (
         db.query(FantaTeam)
-        .options(joinedload(FantaTeam.logos), joinedload(FantaTeam.coaches))
+        .options(joinedload(FantaTeam.logos), joinedload(FantaTeam.coaches), joinedload(FantaTeam.season))
     )
     if season_id:
         q = q.filter(FantaTeam.season_id == season_id)
@@ -215,6 +215,80 @@ def get_fanta_team(team_id: int, db: Session = Depends(get_db)):
     }
 
 
+@teams_router.get("/{team_id}/lineage")
+def get_team_lineage(team_id: int, db: Session = Depends(get_db)):
+    team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
+    if not team:
+        raise HTTPException(404, "Team not found")
+
+    if team.lineage_id is None:
+        teams = [team]
+    else:
+        teams = (
+            db.query(FantaTeam)
+            .filter(FantaTeam.lineage_id == team.lineage_id)
+            .all()
+        )
+    teams.sort(key=lambda t: t.season.year_start)
+    return [
+        {"team_id": t.id, "season_id": t.season_id, "season_label": t.season.label, "name": t.name}
+        for t in teams
+    ]
+
+
+class LineageLinkRequest(BaseModel):
+    team_a_id: int
+    team_b_id: int
+    keep_distinct_names: bool = True
+
+
+@teams_router.post("/link-lineage")
+def link_team_lineage(
+    data: LineageLinkRequest, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    team_a = db.query(FantaTeam).filter(FantaTeam.id == data.team_a_id).first()
+    team_b = db.query(FantaTeam).filter(FantaTeam.id == data.team_b_id).first()
+    if not team_a or not team_b:
+        raise HTTPException(404, "Squadra non trovata")
+    if team_a.season_id == team_b.season_id:
+        raise HTTPException(
+            400,
+            "Le due squadre sono della stessa stagione: usa /team-merge/merge per i doppioni, "
+            "non il collegamento storico tra stagioni diverse",
+        )
+
+    existing_lineage_ids = {t.lineage_id for t in (team_a, team_b) if t.lineage_id is not None}
+    if not existing_lineage_ids:
+        lineage = FantaTeamLineage()
+        db.add(lineage)
+        db.flush()
+    elif len(existing_lineage_ids) == 1:
+        lineage = db.query(FantaTeamLineage).filter(
+            FantaTeamLineage.id == next(iter(existing_lineage_ids))
+        ).first()
+    else:
+        # Entrambe avevano gia' una lineage propria (con altre stagioni
+        # collegate): le si unifica in una sola, spostando tutte le squadre
+        # dalla lineage "persa" a quella "vincente" e cancellando la vuota.
+        winner_id, loser_id = sorted(existing_lineage_ids)
+        db.query(FantaTeam).filter(FantaTeam.lineage_id == loser_id).update(
+            {FantaTeam.lineage_id: winner_id}
+        )
+        db.query(FantaTeamLineage).filter(FantaTeamLineage.id == loser_id).delete()
+        db.flush()
+        lineage = db.query(FantaTeamLineage).filter(FantaTeamLineage.id == winner_id).first()
+
+    team_a.lineage_id = lineage.id
+    team_b.lineage_id = lineage.id
+
+    if not data.keep_distinct_names:
+        older, newer = sorted((team_a, team_b), key=lambda t: t.season.year_start)
+        older.name = newer.name
+
+    db.commit()
+    return {"ok": True, "lineage_id": lineage.id}
+
+
 @teams_router.post("/{team_id}/coaches", status_code=201)
 def assign_coach(team_id: int, data: CoachAssign, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
@@ -276,7 +350,9 @@ def _team_summary(t: FantaTeam):
     ]
     return {
         "id": t.id, "name": t.name, "season_id": t.season_id,
-        "league_id": t.league_id, "credits_spent": t.credits_spent,
+        "season_label": t.season.label,
+        "league_id": t.league_id, "lineage_id": t.lineage_id,
+        "credits_spent": t.credits_spent,
         "remaining_credits": t.remaining_credits, "logo_url": logo,
         "coaches": coaches,
     }

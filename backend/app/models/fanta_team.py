@@ -27,6 +27,21 @@ class League(Base):
     fanta_teams = relationship("FantaTeam", back_populates="league")
 
 
+class FantaTeamLineage(Base):
+    """Identita' persistente di una squadra attraverso le stagioni.
+
+    FantaTeam e' una riga per stagione: se la stessa squadra reale si
+    rinomina (es. "Why So Serious" -> "Conquistadores"), le righe restano
+    separate e invariate (nome, rosa, classifiche di quell'anno), ma
+    condividono questa lineage per essere riconosciute come la stessa
+    squadra. Nessun altro campo: i nomi storici restano su FantaTeam.name."""
+    __tablename__ = "fanta_team_lineages"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    teams = relationship("FantaTeam", back_populates="lineage")
+
+
 class FantaTeam(Base):
     """Una squadra in una specifica stagione."""
     __tablename__ = "fanta_teams"
@@ -35,6 +50,7 @@ class FantaTeam(Base):
     name = Column(String(150), nullable=False)
     season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False)
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False)
+    lineage_id = Column(Integer, ForeignKey("fanta_team_lineages.id"), nullable=True)
     credits_spent = Column(Float, default=0.0)
     remaining_credits = Column(Float, default=350.0)
     # Palmarès come lista JSON serializzata (badge type list)
@@ -42,6 +58,7 @@ class FantaTeam(Base):
 
     season = relationship("Season", back_populates="fanta_teams")
     league = relationship("League", back_populates="fanta_teams")
+    lineage = relationship("FantaTeamLineage", back_populates="teams")
     logos = relationship("FantaTeamLogo", back_populates="fanta_team")
     coaches = relationship("FantaTeamCoach", back_populates="fanta_team")
     rosters = relationship("FantaRoster", back_populates="fanta_team")

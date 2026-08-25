@@ -133,6 +133,11 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
                   styleClass="filter-drop"
                   appendTo="body"
                 />
+                @if (t.lineage_id) {
+                  <span class="lineage-note text-muted" (click)="loadLineageNote(t)">
+                    {{ lineageNotes()[t.id] ?? '🔗 stessa squadra in altre stagioni (clic per i nomi)' }}
+                  </span>
+                }
               </div>
               <div class="assign-controls">
                 <button
@@ -185,7 +190,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
           </p>
           <div class="manual-pick">
             <p-dropdown
-              [options]="teamOptions()"
+              [options]="mergeTeamOptions()"
               [(ngModel)]="mergeTeamAId"
               placeholder="Cerca prima squadra..."
               [filter]="true"
@@ -196,7 +201,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             />
             <span class="text-muted">+</span>
             <p-dropdown
-              [options]="teamOptions()"
+              [options]="mergeTeamOptions()"
               [(ngModel)]="mergeTeamBId"
               placeholder="Cerca seconda squadra..."
               [filter]="true"
@@ -207,20 +212,47 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             />
           </div>
           @if (mergeTeamPair(); as pair) {
-            <div class="merge-pair">
-              @for (t of [pair.a, pair.b]; track t.id) {
+            @if (pair.a.season_id === pair.b.season_id) {
+              <div class="merge-pair">
+                @for (t of [pair.a, pair.b]; track t.id) {
+                  <div class="merge-row">
+                    <span class="merge-name">{{ t.name }}</span>
+                    <button
+                      pButton
+                      size="small"
+                      label="Unisci qui"
+                      [loading]="mergingTeams()"
+                      (click)="mergeTeamsInto(t, pair)"
+                    ></button>
+                  </div>
+                }
+              </div>
+            } @else {
+              <div class="merge-pair">
+                <p class="text-muted" style="font-size:12px; margin:0 0 8px;">
+                  Stagioni diverse ({{ pair.a.season_label }} / {{ pair.b.season_label }}): probabilmente
+                  la stessa squadra rinominata, non un doppione. Nessun dato viene cancellato in nessuno dei due casi.
+                </p>
                 <div class="merge-row">
-                  <span class="merge-name">{{ t.name }}</span>
                   <button
                     pButton
                     size="small"
-                    label="Unisci qui"
+                    class="p-button-outlined"
+                    label="Stessa squadra, nomi distinti"
                     [loading]="mergingTeams()"
-                    (click)="mergeTeamsInto(t, pair)"
+                    (click)="linkLineage(pair, true)"
+                  ></button>
+                  <button
+                    pButton
+                    size="small"
+                    class="p-button-outlined"
+                    label="Stessa squadra, nome unico"
+                    [loading]="mergingTeams()"
+                    (click)="linkLineage(pair, false)"
                   ></button>
                 </div>
-              }
-            </div>
+              </div>
+            }
           } @else if (mergeTeamAId && mergeTeamBId) {
             <p class="text-muted" style="padding:10px 16px;">Seleziona due squadre diverse.</p>
           }
@@ -375,6 +407,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
     .team-name { font-weight: 700; font-size: 14px; display: block; margin-bottom: 4px; }
     .team-mgmt-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .team-name-input { min-width: 200px; }
+    .lineage-note { font-size: 11px; cursor: pointer; text-decoration: underline dotted; }
     .coaches { display: flex; flex-wrap: wrap; gap: 6px; }
     .assigned-chip {
       display: inline-flex; align-items: center; gap: 4px;
@@ -442,6 +475,8 @@ export class AdminTeamsComponent implements OnInit {
   participants = signal<any[]>([]);
   available = signal<any[]>([]);
   standingsRows = signal<any[]>([]);
+  allTeamsForMerge = signal<any[]>([]);
+  lineageNotes = signal<Record<number, string | undefined>>({});
 
   creating = signal(false);
   savingTeamId = signal<number | null>(null);
@@ -472,6 +507,46 @@ export class AdminTeamsComponent implements OnInit {
   ngOnInit() {
     this.loadAllenatori();
     this.loadSeasons();
+    this.loadAllTeamsForMerge();
+  }
+
+  loadAllTeamsForMerge() {
+    this.api.getFantaTeams().subscribe({ next: d => this.allTeamsForMerge.set(d) });
+  }
+
+  mergeTeamOptions() {
+    return this.allTeamsForMerge().map(t => ({ label: `${t.name} (${t.season_label})`, value: t.id }));
+  }
+
+  loadLineageNote(team: any) {
+    this.api.getTeamLineage(team.id).subscribe({
+      next: entries => {
+        const others = entries.filter((e: any) => e.team_id !== team.id);
+        const text = others.length
+          ? `🔗 ${others.map((e: any) => `${e.name} (${e.season_label})`).join(', ')}`
+          : '🔗 nessun altro nome collegato';
+        this.lineageNotes.update(notes => ({ ...notes, [team.id]: text }));
+      },
+      error: () => this.setMessage('Errore nel caricamento dello storico nomi.', true),
+    });
+  }
+
+  linkLineage(pair: { a: any; b: any }, keepDistinctNames: boolean) {
+    this.mergingTeams.set(true);
+    this.api.linkTeamLineage(pair.a.id, pair.b.id, keepDistinctNames).subscribe({
+      next: () => {
+        this.mergingTeams.set(false);
+        this.setMessage(`"${pair.a.name}" e "${pair.b.name}" collegate come stessa squadra.`, false);
+        this.mergeTeamAId = null;
+        this.mergeTeamBId = null;
+        this.loadAllTeamsForMerge();
+        this.loadTeams();
+      },
+      error: err => {
+        this.mergingTeams.set(false);
+        this.setMessage(err.error?.detail || 'Errore nel collegamento.', true);
+      },
+    });
   }
 
   loadSeasons() {
@@ -647,14 +722,10 @@ export class AdminTeamsComponent implements OnInit {
     });
   }
 
-  teamOptions() {
-    return this.teams().map(t => ({ label: t.name, value: t.id }));
-  }
-
   mergeTeamPair(): { a: any; b: any } | null {
     if (!this.mergeTeamAId || !this.mergeTeamBId || this.mergeTeamAId === this.mergeTeamBId) return null;
-    const a = this.teams().find(t => t.id === this.mergeTeamAId);
-    const b = this.teams().find(t => t.id === this.mergeTeamBId);
+    const a = this.allTeamsForMerge().find(t => t.id === this.mergeTeamAId);
+    const b = this.allTeamsForMerge().find(t => t.id === this.mergeTeamBId);
     return a && b ? { a, b } : null;
   }
 
@@ -668,6 +739,7 @@ export class AdminTeamsComponent implements OnInit {
           this.setMessage(`"${remove.name}" unita a "${keep.name}".`, false);
           this.mergeTeamAId = null;
           this.mergeTeamBId = null;
+          this.loadAllTeamsForMerge();
           this.loadTeams();
         } else {
           this.setMessage(
