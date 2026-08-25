@@ -70,6 +70,12 @@ export const routes: Routes = [
       import('./pages/admin-teams/admin-teams.component').then(m => m.AdminTeamsComponent),
   },
   {
+    path: 'admin/mercato',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/admin-market/admin-market.component').then(m => m.AdminMarketComponent),
+  },
+  {
     path: 'login',
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),

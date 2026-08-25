@@ -38,6 +38,7 @@ interface PendingMerge {
         <h1 class="page-title">⚙️ Amministrazione</h1>
         <p class="text-secondary">Sincronizzazione dati e strumenti di manutenzione</p>
         <a routerLink="/admin/squadre" class="section-link">🛡️ Gestione Squadre (allenatori, associazioni, coppe) →</a>
+        <a routerLink="/admin/mercato" class="section-link">🔄 Mercato (scambi, riparazione invernale) →</a>
       </div>
 
       @if (message()) {

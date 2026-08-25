@@ -295,6 +295,32 @@ export class ApiService {
     });
   }
 
+  // ── Scambi ─────────────────────────────────────────────────
+  getTrades(seasonId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/trades`, { params: new HttpParams().set('season_id', seasonId) });
+  }
+
+  createTrade(data: {
+    season_id: number; team_a_id: number; team_b_id: number;
+    trade_date?: string; notes?: string; player_ids_a: number[]; player_ids_b: number[];
+  }): Observable<any> {
+    return this.http.post(`${this.base}/trades`, data);
+  }
+
+  cancelTrade(tradeId: number): Observable<any> {
+    return this.http.delete(`${this.base}/trades/${tradeId}`);
+  }
+
+  // ── Riparazione invernale ────────────────────────────────────
+  reconcileWinterMarket(seasonId: number, file: File, dryRun: boolean, marketDate?: string): Observable<any> {
+    const form = new FormData();
+    form.append('season_id', String(seasonId));
+    form.append('dry_run', String(dryRun));
+    if (marketDate) form.append('market_date', marketDate);
+    form.append('file', file);
+    return this.http.post(`${this.base}/winter-market/reconcile`, form);
+  }
+
   getCompetitionParticipants(compId: number): Observable<{ participants: any[]; available: any[] }> {
     return this.http.get<{ participants: any[]; available: any[] }>(`${this.base}/competitions/${compId}/participants`);
   }

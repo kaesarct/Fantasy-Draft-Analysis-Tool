@@ -43,6 +43,7 @@ def init_db():
     )
     Base.metadata.create_all(bind=engine)
     _migrate_add_lineage_id()
+    _migrate_add_trade_roster_ids()
     _migrate_add_leghe_id()
     _migrate_widen_secondary_role()
     _migrate_widen_price_secondary_role()
@@ -66,6 +67,21 @@ def _migrate_add_lineage_id():
         conn.execute(text(
             "ALTER TABLE fanta_teams ADD COLUMN IF NOT EXISTS lineage_id "
             "INTEGER REFERENCES fanta_team_lineages(id)"
+        ))
+
+
+def _migrate_add_trade_roster_ids():
+    # create_all crea la tabella trade_items da se' se non esiste, ma non
+    # aggiunge colonne a una tabella gia' esistente: va fatto a mano.
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE trade_items ADD COLUMN IF NOT EXISTS old_roster_id "
+            "INTEGER REFERENCES fanta_rosters(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE trade_items ADD COLUMN IF NOT EXISTS new_roster_id "
+            "INTEGER REFERENCES fanta_rosters(id)"
         ))
 
 

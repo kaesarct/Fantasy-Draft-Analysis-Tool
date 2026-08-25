@@ -31,6 +31,10 @@ class TradeItem(Base):
     # Prezzi prima e dopo la trasposizione (secondo la regola scambi)
     price_before = Column(Float, nullable=True)
     price_after = Column(Float, nullable=True)
+    # Righe FantaRoster toccate da questo item, per poter annullare lo scambio
+    # in modo esatto (ripristinare la vecchia, cancellare la nuova).
+    old_roster_id = Column(Integer, ForeignKey("fanta_rosters.id"), nullable=True)
+    new_roster_id = Column(Integer, ForeignKey("fanta_rosters.id"), nullable=True)
 
     trade = relationship("Trade", back_populates="items")
     player = relationship("Player")
