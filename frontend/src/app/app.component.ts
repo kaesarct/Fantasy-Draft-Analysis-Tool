@@ -183,6 +183,7 @@ export class AppComponent implements OnInit {
     { label: 'Storico',     route: '/history',    icon: '📊' },
     { label: 'Admin',       route: '/admin',      icon: '⚙️'  },
     { label: 'Gestione Squadre', route: '/admin/squadre', icon: '🛡️' },
+    { label: 'Mercato',     route: '/admin/mercato', icon: '🔄' },
   ];
 
   constructor(public auth: AuthService) {}
