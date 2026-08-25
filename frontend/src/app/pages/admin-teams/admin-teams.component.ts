@@ -189,27 +189,49 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             Per squadre create due volte per errore di import (stesso club, nome leggermente diverso).
           </p>
           <div class="manual-pick">
-            <p-dropdown
-              [options]="mergeTeamOptions()"
-              [(ngModel)]="mergeTeamAId"
-              placeholder="Cerca prima squadra..."
-              [filter]="true"
-              filterBy="label"
-              [showClear]="true"
-              appendTo="body"
-              styleClass="manual-drop"
-            />
+            <div class="merge-pick-group">
+              <p-dropdown
+                [options]="seasonOptions()"
+                [(ngModel)]="mergeSeasonAId"
+                placeholder="Stagione"
+                [showClear]="true"
+                appendTo="body"
+                styleClass="merge-season-drop"
+                (ngModelChange)="mergeTeamAId = null"
+              />
+              <p-dropdown
+                [options]="mergeTeamOptions(mergeSeasonAId)"
+                [(ngModel)]="mergeTeamAId"
+                placeholder="Cerca prima squadra..."
+                [filter]="true"
+                filterBy="label"
+                [showClear]="true"
+                appendTo="body"
+                styleClass="manual-drop"
+              />
+            </div>
             <span class="text-muted">+</span>
-            <p-dropdown
-              [options]="mergeTeamOptions()"
-              [(ngModel)]="mergeTeamBId"
-              placeholder="Cerca seconda squadra..."
-              [filter]="true"
-              filterBy="label"
-              [showClear]="true"
-              appendTo="body"
-              styleClass="manual-drop"
-            />
+            <div class="merge-pick-group">
+              <p-dropdown
+                [options]="seasonOptions()"
+                [(ngModel)]="mergeSeasonBId"
+                placeholder="Stagione"
+                [showClear]="true"
+                appendTo="body"
+                styleClass="merge-season-drop"
+                (ngModelChange)="mergeTeamBId = null"
+              />
+              <p-dropdown
+                [options]="mergeTeamOptions(mergeSeasonBId)"
+                [(ngModel)]="mergeTeamBId"
+                placeholder="Cerca seconda squadra..."
+                [filter]="true"
+                filterBy="label"
+                [showClear]="true"
+                appendTo="body"
+                styleClass="manual-drop"
+              />
+            </div>
           </div>
           @if (mergeTeamPair(); as pair) {
             @if (pair.a.season_id === pair.b.season_id) {
@@ -226,6 +248,12 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
                     ></button>
                   </div>
                 }
+              </div>
+            } @else if (pair.a.lineage_id && pair.a.lineage_id === pair.b.lineage_id) {
+              <div class="merge-pair">
+                <p class="text-muted" style="font-size:12px; margin:0;">
+                  ✅ Già collegate come stessa squadra ({{ pair.a.season_label }} / {{ pair.b.season_label }}).
+                </p>
               </div>
             } @else {
               <div class="merge-pair">
@@ -437,6 +465,8 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
 
     .manual-pick { display: flex; align-items: center; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
     .manual-drop { min-width: 220px; }
+    .merge-pick-group { display: flex; align-items: center; gap: 6px; }
+    .merge-season-drop { min-width: 110px; }
 
     .cup-panel { padding: 0; }
     .cup-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -493,6 +523,8 @@ export class AdminTeamsComponent implements OnInit {
   selectedSeasonId: number | null = null;
   newTeamName = '';
   newTeamLeagueId: number | null = null;
+  mergeSeasonAId: number | null = null;
+  mergeSeasonBId: number | null = null;
   mergeTeamAId: number | null = null;
   mergeTeamBId: number | null = null;
   selectedCompetitionId: number | null = null;
@@ -514,8 +546,10 @@ export class AdminTeamsComponent implements OnInit {
     this.api.getFantaTeams().subscribe({ next: d => this.allTeamsForMerge.set(d) });
   }
 
-  mergeTeamOptions() {
-    return this.allTeamsForMerge().map(t => ({ label: `${t.name} (${t.season_label})`, value: t.id }));
+  mergeTeamOptions(seasonId: number | null) {
+    return this.allTeamsForMerge()
+      .filter(t => !seasonId || t.season_id === seasonId)
+      .map(t => ({ label: seasonId ? t.name : `${t.name} (${t.season_label})`, value: t.id }));
   }
 
   loadLineageNote(team: any) {
