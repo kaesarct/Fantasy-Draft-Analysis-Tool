@@ -289,6 +289,53 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             </div>
           }
         </div>
+
+        <!-- Modifica classifica -->
+        <div class="section-title">📊 Modifica classifica</div>
+        <div class="card mb-4 standings-panel">
+          <div class="filters-bar">
+            <p-dropdown
+              [options]="allCompetitionOptions()"
+              [(ngModel)]="selectedStandingsCompId"
+              placeholder="Competizione"
+              (ngModelChange)="loadStandingsEditor()"
+              styleClass="filter-drop"
+            />
+            <label class="matchday-label">
+              Giornata
+              <input
+                pInputText type="number" class="matchday-input"
+                [(ngModel)]="standingsMatchDay"
+                (ngModelChange)="loadStandingsEditor()"
+              />
+            </label>
+          </div>
+          @if (selectedStandingsCompId) {
+            <div class="standings-table">
+              @for (row of standingsRows(); track row.fanta_team_id) {
+                <div class="standings-row">
+                  <span class="team-name">{{ row.fanta_team_name }}</span>
+                  <label class="standing-field">
+                    Pts
+                    <input pInputText type="number" class="standing-input" [(ngModel)]="row._pts" />
+                  </label>
+                  <label class="standing-field">
+                    Acc.
+                    <input pInputText type="number" class="standing-input" [(ngModel)]="row._totalScore" />
+                  </label>
+                  <button
+                    pButton label="Salva" size="small" class="p-button-outlined"
+                    [loading]="savingStandingId() === row.fanta_team_id"
+                    (click)="saveStanding(row)"
+                  ></button>
+                </div>
+              }
+              @empty {
+                <p class="text-muted" style="padding:20px;">Nessuna squadra eleggibile per questa competizione.</p>
+              }
+            </div>
+          }
+        </div>
       }
     </div>
   `,
@@ -371,6 +418,19 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
     .cup-column-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; }
     .draggable-chip { cursor: grab; }
     .draggable-chip:active { cursor: grabbing; }
+
+    .standings-panel { padding: 0; }
+    .matchday-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+    .matchday-input { width: 70px; }
+    .standings-table { padding: 0; }
+    .standings-row {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      padding: 10px 16px; border-bottom: 1px solid var(--border-subtle);
+    }
+    .standings-row:last-child { border-bottom: none; }
+    .standings-row .team-name { font-weight: 600; font-size: 13px; flex: 1; min-width: 160px; }
+    .standing-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+    .standing-input { width: 70px; }
   `],
 })
 export class AdminTeamsComponent implements OnInit {
@@ -381,12 +441,14 @@ export class AdminTeamsComponent implements OnInit {
   competitions = signal<any[]>([]);
   participants = signal<any[]>([]);
   available = signal<any[]>([]);
+  standingsRows = signal<any[]>([]);
 
   creating = signal(false);
   savingTeamId = signal<number | null>(null);
   deletingTeamId = signal<number | null>(null);
   creatingTeam = signal(false);
   mergingTeams = signal(false);
+  savingStandingId = signal<number | null>(null);
   message = signal('');
   messageIsError = signal(false);
 
@@ -399,6 +461,8 @@ export class AdminTeamsComponent implements OnInit {
   mergeTeamAId: number | null = null;
   mergeTeamBId: number | null = null;
   selectedCompetitionId: number | null = null;
+  selectedStandingsCompId: number | null = null;
+  standingsMatchDay = 1;
   dragOverColumn = signal<'available' | 'participants' | null>(null);
   private draggedTeam: any | null = null;
   private draggedFrom: 'available' | 'participants' | null = null;
@@ -418,8 +482,10 @@ export class AdminTeamsComponent implements OnInit {
 
   onSeasonChange() {
     this.selectedCompetitionId = null;
+    this.selectedStandingsCompId = null;
     this.participants.set([]);
     this.available.set([]);
+    this.standingsRows.set([]);
     this.loadTeams();
     this.loadLeagues();
     this.loadCompetitions();
@@ -465,6 +531,10 @@ export class AdminTeamsComponent implements OnInit {
   loadCompetitions() {
     if (!this.selectedSeasonId) return;
     this.api.getSeasonCompetitions(this.selectedSeasonId).subscribe({ next: d => this.competitions.set(d) });
+  }
+
+  allCompetitionOptions() {
+    return this.competitions().map(c => ({ label: c.name, value: c.id }));
   }
 
   otherCompetitionOptions() {
@@ -657,6 +727,37 @@ export class AdminTeamsComponent implements OnInit {
     this.api.removeCompetitionParticipant(this.selectedCompetitionId, p.id).subscribe({
       next: () => this.loadParticipants(),
       error: err => this.setMessage(err.error?.detail || 'Errore rimozione squadra.', true),
+    });
+  }
+
+  loadStandingsEditor() {
+    if (!this.selectedStandingsCompId) return;
+    this.api.getStandingsEditor(this.selectedStandingsCompId, this.standingsMatchDay || 1).subscribe({
+      next: rows => this.standingsRows.set(
+        rows.map(r => ({ ...r, _pts: r.pts, _totalScore: r.total_score }))
+      ),
+      error: err => this.setMessage(err.error?.detail || 'Errore nel caricamento della classifica.', true),
+    });
+  }
+
+  saveStanding(row: any) {
+    if (!this.selectedStandingsCompId) return;
+    this.savingStandingId.set(row.fanta_team_id);
+    this.api.upsertStanding(this.selectedStandingsCompId, {
+      fanta_team_id: row.fanta_team_id,
+      match_day: this.standingsMatchDay || 1,
+      pts: row._pts,
+      total_score: row._totalScore,
+    }).subscribe({
+      next: () => {
+        this.savingStandingId.set(null);
+        this.setMessage(`Classifica di "${row.fanta_team_name}" aggiornata.`, false);
+        this.loadStandingsEditor();
+      },
+      error: err => {
+        this.savingStandingId.set(null);
+        this.setMessage(err.error?.detail || 'Errore aggiornamento classifica.', true);
+      },
     });
   }
 

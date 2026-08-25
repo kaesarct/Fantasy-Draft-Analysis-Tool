@@ -115,6 +115,17 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/competitions/${compId}/matches`, { params });
   }
 
+  getStandingsEditor(compId: number, matchDay: number = 1): Observable<any[]> {
+    const params = new HttpParams().set('match_day', matchDay);
+    return this.http.get<any[]>(`${this.base}/competitions/${compId}/standings-editor`, { params });
+  }
+
+  upsertStanding(compId: number, data: {
+    fanta_team_id: number; match_day: number; pts?: number; total_score?: number;
+  }): Observable<any> {
+    return this.http.put(`${this.base}/competitions/${compId}/standings`, data);
+  }
+
   // ── Matches ────────────────────────────────────────────────
   getNextMatches(): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/matches`);

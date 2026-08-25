@@ -13,6 +13,10 @@ router = APIRouter(tags=["league"])
 seasons_router = APIRouter(prefix="/seasons")
 competitions_router = APIRouter(prefix="/competitions")
 
+# Gold/Bronze/Carbon hanno l'iscrizione automatica tramite FantaTeam.league_id
+# (stessa distinzione usata in frontend/.../admin-teams.component.ts).
+MAIN_LEAGUE_TYPES = {"GOLD", "BRONZE", "CARBON"}
+
 
 @seasons_router.get("")
 def list_seasons(db: Session = Depends(get_db)):
@@ -66,7 +70,9 @@ def get_season_standings(
         q = q.filter(Competition.type == comp_type.upper())
     if match_day:
         q = q.filter(CompetitionStanding.match_day == match_day)
-    standings = q.order_by(CompetitionStanding.pts.desc()).all()
+    # Silver e' la classifica ad accumulo (total_score), non a punti (pts).
+    order_field = CompetitionStanding.total_score if comp_type and comp_type.upper() == "SILVER" else CompetitionStanding.pts
+    standings = q.order_by(order_field.desc()).all()
     return [
         {
             "fanta_team_id": s.fanta_team_id,
@@ -83,10 +89,15 @@ def get_season_standings(
 
 @competitions_router.get("/{comp_id}/standings")
 def get_competition_standings(comp_id: int, match_day: int | None = None, db: Session = Depends(get_db)):
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(404, "Competizione non trovata")
     q = db.query(CompetitionStanding).filter(CompetitionStanding.competition_id == comp_id)
     if match_day:
         q = q.filter(CompetitionStanding.match_day == match_day)
-    standings = q.order_by(CompetitionStanding.match_day, CompetitionStanding.pts.desc()).all()
+    # Silver e' la classifica ad accumulo (total_score), non a punti (pts).
+    order_field = CompetitionStanding.total_score if comp.type.value == "SILVER" else CompetitionStanding.pts
+    standings = q.order_by(CompetitionStanding.match_day, order_field.desc()).all()
     return [
         {
             "fanta_team_id": s.fanta_team_id, "match_day": s.match_day,
@@ -96,6 +107,108 @@ def get_competition_standings(comp_id: int, match_day: int | None = None, db: Se
         }
         for s in standings
     ]
+
+
+def _standings_roster(db: Session, comp: Competition) -> list[FantaTeam]:
+    """Squadre eleggibili per una competizione: automatiche via league_id per
+    Gold/Bronze/Carbon, iscritte a mano (CompetitionGroupTeam) per le altre."""
+    if comp.type.value in MAIN_LEAGUE_TYPES:
+        return (
+            db.query(FantaTeam)
+            .join(League, League.id == FantaTeam.league_id)
+            .filter(FantaTeam.season_id == comp.season_id, League.level == comp.type.value)
+            .order_by(FantaTeam.name)
+            .all()
+        )
+    return (
+        db.query(FantaTeam)
+        .join(CompetitionGroupTeam, CompetitionGroupTeam.fanta_team_id == FantaTeam.id)
+        .join(CompetitionGroup, CompetitionGroup.id == CompetitionGroupTeam.group_id)
+        .filter(CompetitionGroup.competition_id == comp.id)
+        .order_by(FantaTeam.name)
+        .all()
+    )
+
+
+@competitions_router.get("/{comp_id}/standings-editor")
+def get_standings_editor(comp_id: int, match_day: int = 1, db: Session = Depends(get_db)):
+    """Roster eleggibile + classifica corrente (se esiste) per una giornata,
+    pensato per l'editor manuale in Gestione Squadre."""
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(404, "Competizione non trovata")
+
+    roster = _standings_roster(db, comp)
+    standings_by_team = {
+        s.fanta_team_id: s
+        for s in db.query(CompetitionStanding).filter(
+            CompetitionStanding.competition_id == comp_id,
+            CompetitionStanding.match_day == match_day,
+        )
+    }
+    result = []
+    for t in roster:
+        s = standings_by_team.get(t.id)
+        result.append({
+            "fanta_team_id": t.id,
+            "fanta_team_name": t.name,
+            "match_day": match_day,
+            "pts": s.pts if s else 0,
+            "total_score": s.total_score if s else 0.0,
+            "wins": s.wins if s else 0,
+            "draws": s.draws if s else 0,
+            "losses": s.losses if s else 0,
+            "goals_for": s.goals_for if s else 0.0,
+            "goals_against": s.goals_against if s else 0.0,
+        })
+    return result
+
+
+class StandingUpsert(BaseModel):
+    fanta_team_id: int
+    match_day: int = 1
+    pts: int | None = None
+    total_score: float | None = None
+    wins: int | None = None
+    draws: int | None = None
+    losses: int | None = None
+    goals_for: float | None = None
+    goals_against: float | None = None
+
+
+@competitions_router.put("/{comp_id}/standings")
+def upsert_standing(
+    comp_id: int, data: StandingUpsert, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(404, "Competizione non trovata")
+    team = db.query(FantaTeam).filter(FantaTeam.id == data.fanta_team_id).first()
+    if not team or team.season_id != comp.season_id:
+        raise HTTPException(400, "La squadra scelta non appartiene alla stagione della competizione")
+
+    standing = (
+        db.query(CompetitionStanding)
+        .filter(
+            CompetitionStanding.competition_id == comp_id,
+            CompetitionStanding.fanta_team_id == data.fanta_team_id,
+            CompetitionStanding.match_day == data.match_day,
+        )
+        .first()
+    )
+    if not standing:
+        standing = CompetitionStanding(
+            competition_id=comp_id, fanta_team_id=data.fanta_team_id, match_day=data.match_day
+        )
+        db.add(standing)
+
+    for field in ("pts", "total_score", "wins", "draws", "losses", "goals_for", "goals_against"):
+        value = getattr(data, field)
+        if value is not None:
+            setattr(standing, field, value)
+
+    db.commit()
+    return {"ok": True}
 
 
 @competitions_router.get("/{comp_id}/matches")
