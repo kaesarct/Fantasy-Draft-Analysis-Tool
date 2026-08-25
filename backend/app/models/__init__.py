@@ -1,7 +1,7 @@
 """Models package — import all so SQLAlchemy Base knows about all tables."""
 from app.models.season import Season  # noqa
 from app.models.serie_a_team import SerieATeam  # noqa
-from app.models.player import Player, PlayerSnapshot, PlayerMatchScore  # noqa
+from app.models.player import Player, PlayerSnapshot, PlayerMatchScore, PlayerArchiveSeasonStat  # noqa
 from app.models.fanta_allenatore import FantaAllenatore  # noqa
 from app.models.fanta_team import (  # noqa
     League, LeagueLevel,

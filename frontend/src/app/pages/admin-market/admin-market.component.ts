@@ -19,7 +19,7 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
       <div class="page-header">
         <a routerLink="/admin" class="back-link">← Admin</a>
         <h1 class="page-title">🔄 Mercato</h1>
-        <p class="text-secondary">Scambi tra squadre e riparazione invernale</p>
+        <p class="text-secondary">Scambi tra squadre, rosa estiva e riparazione invernale</p>
       </div>
 
       @if (message()) {
@@ -133,6 +133,61 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
               <p class="text-muted" style="padding:14px 16px; margin:0;">Nessuno scambio registrato per questa stagione.</p>
             }
           </div>
+        </div>
+
+        <!-- Rosa estiva -->
+        <div class="section-title">☀️ Rosa estiva</div>
+        <div class="card mb-4 winter-panel">
+          <p class="text-muted" style="padding:14px 16px 0; font-size:12px; margin:0;">
+            Carica un file con la rosa iniziale di tutte le squadre della stagione (asta estiva). Le squadre
+            devono già esistere (creale prima in "Gestione squadre" se e' una stagione nuova): il sistema
+            assegna i giocatori del file per differenza rispetto alla rosa attuale — su una rosa vuota
+            equivale a un primo caricamento completo.
+          </p>
+          <div class="winter-form-row">
+            <input type="file" accept=".csv,.xlsx,.xls,.dat,.html,.htm" (change)="onSummerFileSelected($event)" />
+            <input pInputText type="date" [(ngModel)]="summerDate" class="trade-date-input" />
+            <label class="text-muted" style="display:flex; align-items:center; gap:4px; font-size:12px;">
+              <input type="checkbox" [(ngModel)]="summerCreateMissingPlayers" />
+              Crea giocatori mancanti (file storici)
+            </label>
+            <button pButton label="Verifica" size="small" class="p-button-outlined"
+              [disabled]="!summerFile" [loading]="summerLoading()" (click)="runSummerRoster(true)"></button>
+            <button pButton label="Applica" size="small"
+              [disabled]="!summerPreview()" [loading]="summerLoading()" (click)="runSummerRoster(false)"></button>
+          </div>
+
+          @if (summerPreview(); as preview) {
+            <div class="winter-report">
+              @for (r of preview.report; track r.team_id) {
+                <div class="winter-team-report">
+                  <strong>{{ r.team_name }}</strong>
+                  <span class="text-muted">(delta crediti: {{ r.credit_delta }})</span>
+                  @for (p of r.released; track p.player_id) {
+                    <div class="text-muted">− {{ p.player_name }} (rimborso {{ p.refund }})</div>
+                  }
+                  @for (p of r.added; track p.player_id) {
+                    <div class="text-muted">+ {{ p.player_name }} ({{ p.price }})</div>
+                  }
+                </div>
+              }
+              @if (preview.created_players?.length) {
+                <p class="text-muted" style="padding:8px 16px;">
+                  Giocatori storici creati: {{ preview.created_players.length }}
+                  ({{ createdPlayersSummary(preview.created_players) }})
+                </p>
+              }
+              @if (preview.unmatched_teams.length || preview.unmatched_players.length) {
+                <p class="trade-warning">
+                  Non riconosciuti — squadre: {{ preview.unmatched_teams.join(', ') || 'nessuna' }};
+                  giocatori: {{ preview.unmatched_players.join(', ') || 'nessuno' }}
+                </p>
+              }
+              @if (preview.applied) {
+                <p class="text-muted" style="padding:8px 16px; font-weight:700;">✅ Applicato.</p>
+              }
+            </div>
+          }
         </div>
 
         <!-- Riparazione invernale -->
@@ -250,6 +305,8 @@ export class AdminMarketComponent implements OnInit {
   cancellingTradeId = signal<number | null>(null);
   winterLoading = signal(false);
   winterPreview = signal<any>(null);
+  summerLoading = signal(false);
+  summerPreview = signal<any>(null);
 
   message = signal('');
   messageIsError = signal(false);
@@ -262,6 +319,9 @@ export class AdminMarketComponent implements OnInit {
   winterFile: File | null = null;
   winterDate: string = new Date().toISOString().slice(0, 10);
   winterCreateMissingPlayers = false;
+  summerFile: File | null = null;
+  summerDate: string = new Date().toISOString().slice(0, 10);
+  summerCreateMissingPlayers = false;
 
   constructor(private api: ApiService) {}
 
@@ -284,6 +344,7 @@ export class AdminMarketComponent implements OnInit {
     this.tradeTeamA.set(null);
     this.tradeTeamB.set(null);
     this.winterPreview.set(null);
+    this.summerPreview.set(null);
     if (!this.selectedSeasonId) return;
     this.api.getFantaTeams(this.selectedSeasonId).subscribe({ next: d => this.teams.set(d) });
     this.loadTrades();
@@ -388,6 +449,28 @@ export class AdminMarketComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     this.winterFile = input.files?.[0] ?? null;
     this.winterPreview.set(null);
+  }
+
+  onSummerFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.summerFile = input.files?.[0] ?? null;
+    this.summerPreview.set(null);
+  }
+
+  runSummerRoster(dryRun: boolean) {
+    if (!this.summerFile || !this.selectedSeasonId) return;
+    this.summerLoading.set(true);
+    this.api.reconcileWinterMarket(this.selectedSeasonId, this.summerFile, dryRun, this.summerDate, this.summerCreateMissingPlayers).subscribe({
+      next: res => {
+        this.summerLoading.set(false);
+        this.summerPreview.set(res);
+        this.setMessage(dryRun ? 'Anteprima calcolata: controlla il report prima di applicare.' : 'Rosa estiva applicata.', false);
+      },
+      error: err => {
+        this.summerLoading.set(false);
+        this.setMessage(err.error?.detail || 'Errore durante la riconciliazione.', true);
+      },
+    });
   }
 
   createdPlayersSummary(createdPlayers: { player_name: string; role: string }[]): string {
