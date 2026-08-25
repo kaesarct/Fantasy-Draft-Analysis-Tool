@@ -36,6 +36,8 @@ _VALID_ROLES = {"P", "D", "C", "A"}
 # <table> per squadra, prima riga <td colspan=3><strong>NOME</strong></td>,
 # poi righe <td>ruolo</td><td>(CLUB) Giocatore</td><td>prezzo</td>.
 _CLUB_PREFIX_RE = re.compile(r"^\([A-Z]+\)\s*")
+# Alcuni export hanno un numero (posizione/ID) prima del nome squadra, es. "1Zu' Pietro".
+_TEAM_NUMERIC_PREFIX_RE = re.compile(r"^\d+\s*")
 
 
 def _parse_html_rosters(content: bytes) -> pd.DataFrame:
@@ -48,7 +50,7 @@ def _parse_html_rosters(content: bytes) -> pd.DataFrame:
         header_tds = trs[0].find_all("td")
         if len(header_tds) != 1 or not header_tds[0].find("strong"):
             continue  # non e' una tabella-squadra (es. il contenitore esterno)
-        team_name = header_tds[0].get_text(strip=True)
+        team_name = _TEAM_NUMERIC_PREFIX_RE.sub("", header_tds[0].get_text(strip=True))
         for tr in trs[1:]:
             tds = tr.find_all("td")
             if len(tds) != 3:
