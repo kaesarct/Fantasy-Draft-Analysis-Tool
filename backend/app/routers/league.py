@@ -66,10 +66,11 @@ def get_season_standings(
         q = q.filter(Competition.type == comp_type.upper())
     if match_day:
         q = q.filter(CompetitionStanding.match_day == match_day)
-    standings = q.all()
+    standings = q.order_by(CompetitionStanding.pts.desc()).all()
     return [
         {
             "fanta_team_id": s.fanta_team_id,
+            "fanta_team_name": s.fanta_team.name,
             "competition_id": s.competition_id,
             "match_day": s.match_day,
             "pts": s.pts, "wins": s.wins, "draws": s.draws, "losses": s.losses,

@@ -67,7 +67,7 @@ const LEAGUE_TABS = [
                       <span [class]="positionClass(i)">{{ i + 1 }}</span>
                     </td>
                     <td>
-                      <strong>Squadra #{{ s.fanta_team_id }}</strong>
+                      <strong>{{ s.fanta_team_name ?? ('Squadra #' + s.fanta_team_id) }}</strong>
                     </td>
                     <td style="text-align:center">{{ s.played ?? (s.wins + s.draws + s.losses) }}</td>
                     <td style="text-align:center;color:var(--accent-green)">{{ s.wins }}</td>
