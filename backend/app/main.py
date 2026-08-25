@@ -30,6 +30,14 @@ async def lifespan(app: FastAPI):
         id="daily_sync",
         replace_existing=True,
     )
+    # Scheduler: bollettino infortuni Serie A ogni 3 ore
+    scheduler.add_job(
+        func=_auto_sync_injuries_job,
+        trigger="interval",
+        hours=3,
+        id="injury_sync",
+        replace_existing=True,
+    )
     scheduler.start()
     logger.info("Scheduler started")
     yield
@@ -54,6 +62,21 @@ def _auto_sync_job():
         logger.info("Auto-sync completed for season %s", current_season.label)
     except Exception as e:
         logger.error("Auto-sync error: %s", e)
+    finally:
+        db.close()
+
+
+def _auto_sync_injuries_job():
+    """Scheduled job: sync the Serie A injury bulletin from fantacalcio.it."""
+    from app.database import SessionLocal
+    from app.services.sync_service import sync_serie_a_injuries
+
+    db = SessionLocal()
+    try:
+        result = sync_serie_a_injuries(db)
+        logger.info("Injury bulletin sync completed: %s", result)
+    except Exception as e:
+        logger.error("Injury bulletin sync error: %s", e)
     finally:
         db.close()
 
