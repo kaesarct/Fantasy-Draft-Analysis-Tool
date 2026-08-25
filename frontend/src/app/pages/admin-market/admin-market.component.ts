@@ -143,8 +143,12 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
             svincoli e acquisti per differenza rispetto alla rosa attuale. L'asta avviene fuori piattaforma.
           </p>
           <div class="winter-form-row">
-            <input type="file" accept=".csv,.xlsx,.xls,.dat" (change)="onFileSelected($event)" />
+            <input type="file" accept=".csv,.xlsx,.xls,.dat,.html,.htm" (change)="onFileSelected($event)" />
             <input pInputText type="date" [(ngModel)]="winterDate" class="trade-date-input" />
+            <label class="text-muted" style="display:flex; align-items:center; gap:4px; font-size:12px;">
+              <input type="checkbox" [(ngModel)]="winterCreateMissingPlayers" />
+              Crea giocatori mancanti (file storici)
+            </label>
             <button pButton label="Verifica" size="small" class="p-button-outlined"
               [disabled]="!winterFile" [loading]="winterLoading()" (click)="runWinterMarket(true)"></button>
             <button pButton label="Applica" size="small"
@@ -164,6 +168,12 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
                     <div class="text-muted">+ {{ p.player_name }} ({{ p.price }})</div>
                   }
                 </div>
+              }
+              @if (preview.created_players?.length) {
+                <p class="text-muted" style="padding:8px 16px;">
+                  Giocatori storici creati: {{ preview.created_players.length }}
+                  ({{ createdPlayersSummary(preview.created_players) }})
+                </p>
               }
               @if (preview.unmatched_teams.length || preview.unmatched_players.length) {
                 <p class="trade-warning">
@@ -251,6 +261,7 @@ export class AdminMarketComponent implements OnInit {
   tradeNotes = '';
   winterFile: File | null = null;
   winterDate: string = new Date().toISOString().slice(0, 10);
+  winterCreateMissingPlayers = false;
 
   constructor(private api: ApiService) {}
 
@@ -379,10 +390,14 @@ export class AdminMarketComponent implements OnInit {
     this.winterPreview.set(null);
   }
 
+  createdPlayersSummary(createdPlayers: { player_name: string; role: string }[]): string {
+    return createdPlayers.map(p => `${p.player_name} (${p.role})`).join(', ');
+  }
+
   runWinterMarket(dryRun: boolean) {
     if (!this.winterFile || !this.selectedSeasonId) return;
     this.winterLoading.set(true);
-    this.api.reconcileWinterMarket(this.selectedSeasonId, this.winterFile, dryRun, this.winterDate).subscribe({
+    this.api.reconcileWinterMarket(this.selectedSeasonId, this.winterFile, dryRun, this.winterDate, this.winterCreateMissingPlayers).subscribe({
       next: res => {
         this.winterLoading.set(false);
         this.winterPreview.set(res);

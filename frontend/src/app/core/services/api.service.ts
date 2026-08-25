@@ -312,10 +312,11 @@ export class ApiService {
   }
 
   // ── Riparazione invernale ────────────────────────────────────
-  reconcileWinterMarket(seasonId: number, file: File, dryRun: boolean, marketDate?: string): Observable<any> {
+  reconcileWinterMarket(seasonId: number, file: File, dryRun: boolean, marketDate?: string, createMissingPlayers?: boolean): Observable<any> {
     const form = new FormData();
     form.append('season_id', String(seasonId));
     form.append('dry_run', String(dryRun));
+    form.append('create_missing_players', String(!!createMissingPlayers));
     if (marketDate) form.append('market_date', marketDate);
     form.append('file', file);
     return this.http.post(`${this.base}/winter-market/reconcile`, form);
