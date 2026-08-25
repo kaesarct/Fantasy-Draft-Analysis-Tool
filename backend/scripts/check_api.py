@@ -5,11 +5,7 @@ temporanea (downloads/ non viene toccata). Esercita le funzioni realmente usate
 dall'app, cosi' un cambio di HTML/endpoint lato fantacalcio.it emerge qui.
 
 Uso (dentro il container backend):
-    python -m scripts.check_api [--playwright]
-
---playwright aggiunge i controlli su leghe che richiedono il browser
-autenticato (dashboard competizioni + V1_LegheFormazioni/Pagina): sono lenti
-(~30s) e dipendono dal session file salvato.
+    python -m scripts.check_api
 """
 import json
 import os
@@ -23,7 +19,7 @@ import requests
 from app.config import settings
 from app.services import seriea_scraper
 from app.services.fanta_client import fanta_client
-from app.services.leghe_client import LegheClient, SessionExpired
+from app.services.leghe_client import LegheClient
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 XLSX_MAGIC = b"PK\x03\x04"
@@ -227,49 +223,16 @@ def check_session_file():
     return OK, f"{len(cookies)} cookie di sola sessione (nessuna scadenza)"
 
 
-def check_competizioni_api(state: dict):
-    """Conteggio competizioni dalla REST API: distingue "nessuna competizione
-    creata" da "discovery HTML rotta", che dalla dashboard sono indistinguibili."""
-
+def check_competizioni(state: dict):
     def _check():
         client = state.get("client")
         if client is None or not client.leghe:
-            return WARN, "login leghe non riuscito: conteggio competizioni non verificabile"
-        lega = next((l for l in client.leghe if l.get("alias") == settings.fanta_lega_name), None)
-        if lega is None or not lega.get("jwt"):
-            return WARN, "jwt di lega non disponibile: conteggio competizioni non verificabile"
-        resp = requests.get(
-            "https://apileague.fantacalcio.it/onboarding/v1/league/competitions",
-            headers={
-                "app_key": client.session.headers["app_key"],
-                "authorization": f"Bearer {lega['jwt']}",
-                "accept": "application/json",
-            },
-            timeout=15,
-        )
-        if not resp.ok:
-            return FAIL, f"HTTP {resp.status_code}: {resp.text[:120]}"
-        competizioni = resp.json()
-        state["n_comp_api"] = len(competizioni)
+            return WARN, "login leghe non riuscito: competizioni non verificabili"
+        competizioni = client.list_competitions()
+        state["competizioni"] = competizioni
         if not competizioni:
             return WARN, "0 competizioni create in lega per questa stagione"
-        return OK, f"{len(competizioni)} competizioni in lega"
-
-    return _check
-
-
-def check_competizioni(state: dict):
-    def _check():
-        client = state.get("client") or LegheClient()
-        state["client"] = client
-        try:
-            competizioni = client.discover_competizioni()
-        except SessionExpired:
-            if state.get("n_comp_api") == 0:
-                return WARN, "dropdown vuoto, coerente con 0 competizioni create in lega"
-            raise
-        state["competizioni"] = competizioni
-        elenco = ", ".join(f"{n}={i}" for n, i in competizioni.items())
+        elenco = ", ".join(f"{c['name']}={c['id']}" for c in competizioni)
         return OK, f"{len(competizioni)} competizioni — {elenco}"
 
     return _check
@@ -281,22 +244,32 @@ def check_formazioni(state: dict):
         if not competizioni:
             return WARN, "competizioni non disponibili: check formazioni saltato"
         client = state["client"]
-        nome, id_comp = next(iter(competizioni.items()))
-        res = client.get_formazioni(id_comp)
-        dati = res.get("dati") or {}
-        squadre = dati.get("data") if isinstance(dati, dict) else None
-        n_squadre = len(squadre) if isinstance(squadre, list) else "?"
-        return OK, (
-            f"'{nome}' (id_comp={id_comp}) giornata={res.get('giornata')}, "
-            f"chiavi risposta={sorted(dati)[:5]}, squadre={n_squadre}"
-        )
+        day = fanta_client.get_last_matchday() + 1
+
+        # Non tutte le competizioni sono attive alla giornata corrente (es. una
+        # coppa che parte piu' avanti in stagione): provo finche' una risponde.
+        for comp in competizioni:
+            id_comp, nome = comp["id"], comp["name"]
+            squadre = client.list_competition_teams(id_comp)
+            if not squadre:
+                continue
+            team_id, nome_squadra = next(iter(squadre.items()))
+            lineup = client.get_team_lineup(id_comp, day, team_id)
+            if lineup is None:
+                continue
+            n_starts = len(lineup.get("starts") or [])
+            n_bench = len(lineup.get("bench") or [])
+            return OK, (
+                f"'{nome}' (id_comp={id_comp}) giornata={day}, squadra='{nome_squadra}', "
+                f"modulo={lineup.get('mdl')}, titolari={n_starts}, panchina={n_bench}"
+            )
+
+        return WARN, f"giornata {day}: nessuna formazione disponibile in nessuna competizione"
 
     return _check
 
 
 def main() -> int:
-    con_playwright = "--playwright" in sys.argv
-
     print("=" * 78)
     print("Diagnostica API — fantacalcio.it / leghe.fantacalcio.it")
     print(f"season_code={settings.fanta_year_quotazioni}  lega={settings.fanta_lega_name or '(non impostata)'}")
@@ -322,15 +295,9 @@ def main() -> int:
     run("discovery authAppKey", check_app_key(state))
     run("POST apileague/onboarding/v1/login", check_leghe_login(state))
     run("alias lega configurato", check_lega_alias(state))
-    run("GET onboarding/v1/league/competitions", check_competizioni_api(state))
+    run("GET onboarding/v1/league/competitions", check_competizioni(state))
+    run("GET gaming/v1/teamLineup", check_formazioni(state))
     run(f"session file ({settings.fanta_session_file})", check_session_file)
-
-    if con_playwright:
-        print("\n── leghe.fantacalcio.it (browser autenticato) ────────────────────")
-        run("dashboard → competizioni", check_competizioni(state))
-        run("V1_LegheFormazioni/Pagina", check_formazioni(state))
-    else:
-        print("\n(check Playwright saltati: rilancia con --playwright per includerli)")
 
     n_ok = sum(1 for _, s, _ in results if s == OK)
     n_warn = sum(1 for _, s, _ in results if s == WARN)

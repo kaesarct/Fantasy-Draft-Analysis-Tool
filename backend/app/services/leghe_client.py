@@ -1,14 +1,13 @@
-"""Leghe.fantacalcio.it client — login API + fetch formazioni via Playwright.
+"""Leghe.fantacalcio.it client — login + lettura competizioni/formazioni via REST.
 
-L'endpoint V1_LegheFormazioni/Pagina rifiuta le chiamate HTTP dirette (anche con
-i cookie di sessione copiati a mano): serve un browser autenticato reale. Si riusa
-lo storage_state salvato da capture_login_session.py (da eseguire sull'host).
-"""
-import os
+La vecchia UI (server-side, scraping via Playwright) e' stata sostituita da una
+SPA con routing e API completamente diversi: competizioni e formazioni si
+leggono ora con chiamate REST autenticate su apileague.fantacalcio.it, con lo
+stesso app_key + Bearer JWT di lega gia' usato per il login (verificato contro
+il sito reale: nessun browser necessario)."""
 import re
 
 import requests
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from app.config import settings
 
@@ -16,25 +15,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class SessionFileMissing(Exception):
-    """Il file di sessione Playwright non esiste: va rigenerato con capture_login_session.py."""
-
-
-class SessionExpired(Exception):
-    """La sessione salvata non e' piu' valida: va rigenerata con capture_login_session.py."""
-
-
 class LegheClient:
     LOGIN_URL = "https://apileague.fantacalcio.it/onboarding/v1/login"
-    COMPETIZIONE_RE = re.compile(
-        r'<a href="#" data-isin="(?:true|false)" data-id="(\d+)"><span[^>]*></span>([^<]+)</a>'
-    )
+    APILEAGUE_BASE = "https://apileague.fantacalcio.it"
 
-    def __init__(self, alias_lega: str | None = None, app_key: str | None = None, headless: bool = True):
+    def __init__(self, alias_lega: str | None = None, app_key: str | None = None):
         self.alias_lega = alias_lega or settings.fanta_lega_name
         self.lega_page_url = f"{settings.fanta_leghe_base_url}{self.alias_lega}"
-        self.leghe_base_url = f"{settings.fanta_leghe_base_url}servizi"
-        self.headless = headless
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -45,6 +32,7 @@ class LegheClient:
         )
         self.utente = None
         self.leghe: list[dict] = []
+        self._lega_jwt: str | None = None
 
     def _discover_app_key(self) -> str:
         # authAppKey e' iniettato dal server nell'HTML (script#serverBridge), non nei bundle JS:
@@ -80,109 +68,89 @@ class LegheClient:
         self.utente = data["data"]["utente"]
         self.leghe = data["data"].get("leghe") or []
         logger.debug("Login leghe avvenuto con successo")
+
+        lega = next((l for l in self.leghe if l.get("alias") == self.alias_lega), None)
+        if not lega or not lega.get("jwt"):
+            raise RuntimeError(
+                f"Lega con alias '{self.alias_lega}' non trovata (o senza jwt) tra le leghe dell'utente"
+            )
+        self._lega_jwt = lega["jwt"]
+
         return self.utente
 
-    @classmethod
-    def _estrai_competizioni(cls, html: str) -> dict[str, int]:
+    def _lega_headers(self) -> dict:
+        if not self._lega_jwt:
+            raise RuntimeError("login() non eseguito: manca il jwt di lega")
         return {
-            nome.strip().lower().replace(" ", "_"): int(id_comp)
-            for id_comp, nome in cls.COMPETIZIONE_RE.findall(html)
+            "app_key": self.session.headers["app_key"],
+            "authorization": f"Bearer {self._lega_jwt}",
+            "accept": "application/json",
         }
 
-    def discover_competizioni(self, timeout_ms: int = 15000) -> dict[str, int]:
-        # Il dropdown competizioni e' renderizzato lato server nell'HTML della dashboard,
-        # non c'e' una chiamata servizi/ dedicata: va letto da li' con un browser autenticato.
-        self._check_session_file()
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=self.headless)
-            context = browser.new_context(storage_state=settings.fanta_session_file)
-            page = context.new_page()
-            page.goto(self.lega_page_url, timeout=timeout_ms)
-            page.wait_for_timeout(timeout_ms)
-            html = page.content()
-            browser.close()
-        competizioni = self._estrai_competizioni(html)
-        if not competizioni:
-            raise SessionExpired(
-                "Nessuna competizione trovata nella dashboard: sessione scaduta o HTML cambiato."
-            )
-        return competizioni
-
-    def _naviga_e_intercetta_formazioni(self, page, id_comp: int, timeout_ms: int) -> dict:
-        url = f"{self.lega_page_url}/formazioni?id={id_comp}"
-        matcher = (
-            lambda r: "V1_LegheFormazioni/Pagina" in r.url
-            and f"id_comp={id_comp}" in r.url
+    def list_competitions(self) -> list[dict]:
+        """Competizioni della lega per la stagione corrente: id, name, sDay/eDay
+        (giornate di validita'), type, tmids (id squadre partecipanti)."""
+        resp = requests.get(
+            f"{self.APILEAGUE_BASE}/onboarding/v1/league/competitions",
+            headers=self._lega_headers(),
+            timeout=15,
         )
-        with page.expect_response(matcher, timeout=timeout_ms) as response_info:
-            page.goto(url, timeout=timeout_ms)
+        resp.raise_for_status()
+        return resp.json()
 
-        response = response_info.value
-        # Ogni competizione puo' essere a una giornata diversa: la pagina la decide da sola,
-        # non e' nel corpo della risposta ma nella query string della chiamata che fa.
-        match = re.search(r"[?&]r=(\d+)", response.url)
-        return {
-            "giornata": int(match.group(1)) if match else None,
-            "dati": response.json(),
-        }
+    def list_competition_teams(self, id_comp: int) -> dict[int, str]:
+        """id squadra (lato leghe.fantacalcio.it) -> nome squadra, per una competizione."""
+        teams: dict[int, str] = {}
+        page = 1
+        while page <= 10:
+            resp = requests.get(
+                f"{self.APILEAGUE_BASE}/onboarding/v1/league/competition/teams",
+                params={"page": page, "pageSize": 50, "competitionId": id_comp},
+                headers=self._lega_headers(),
+                timeout=15,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            for row in body.get("data") or []:
+                teams[row["id"]] = row["n"]
+            if not body.get("nextPage"):
+                break
+            page += 1
+        return teams
 
-    def get_formazioni(self, id_comp: int, timeout_ms: int = 15000) -> dict:
-        self._check_session_file()
+    def get_team_lineup(self, id_comp: int, giornata: int, team_id: int) -> dict | None:
+        """Formazione (titolari/panchina) di una squadra per una giornata di una
+        competizione. None se non ancora disponibile: sia quando il sito risponde
+        200 con home=null (giornata futura ma nel calendario), sia quando risponde
+        400 "LU001 Match day configuration not found or not active" (giornata non
+        ancora attivata per questa competizione, es. non ancora iniziata)."""
+        resp = requests.get(
+            f"{self.APILEAGUE_BASE}/gaming/v1/teamLineup/{id_comp}/{giornata}/{giornata}/{team_id}/0",
+            headers=self._lega_headers(),
+            timeout=15,
+        )
+        if resp.status_code == 400:
+            return None
+        resp.raise_for_status()
+        return resp.json().get("home")
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=self.headless)
-            context = browser.new_context(storage_state=settings.fanta_session_file)
-            page = context.new_page()
-            try:
-                return self._naviga_e_intercetta_formazioni(page, id_comp, timeout_ms)
-            except PlaywrightTimeoutError:
-                raise SessionExpired(
-                    f"Nessuna risposta V1_LegheFormazioni/Pagina per id_comp={id_comp}. "
-                    "La sessione salvata potrebbe essere scaduta: riesegui capture_login_session.py."
-                )
-            finally:
-                browser.close()
-
-    def get_tutte_le_formazioni(
-        self, timeout_ms: int = 15000, competizioni: dict[str, int] | None = None
-    ) -> dict:
-        self._check_session_file()
+    def get_tutte_le_formazioni(self, giornata: int) -> dict:
+        """Formazioni di tutte le competizioni della lega per la giornata data.
+        Ritorna {slug_competizione: {"id_comp", "giornata", "dati": {nome_squadra: lineup}} | None}
+        — None se nessuna squadra della competizione ha ancora una formazione
+        per quella giornata (es. competizione non ancora iniziata)."""
         risultati = {}
+        for comp in self.list_competitions():
+            slug = comp["name"].strip().lower().replace(" ", "_")
+            id_comp = comp["id"]
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=self.headless)
-            context = browser.new_context(storage_state=settings.fanta_session_file)
-            page = context.new_page()
+            squadre = self.list_competition_teams(id_comp)
+            dati = {}
+            for team_id, nome_squadra in squadre.items():
+                lineup = self.get_team_lineup(id_comp, giornata, team_id)
+                if lineup is not None:
+                    dati[nome_squadra] = lineup
 
-            if competizioni is None:
-                page.goto(self.lega_page_url, timeout=timeout_ms)
-                page.wait_for_timeout(timeout_ms)
-                competizioni = self._estrai_competizioni(page.content())
-
-            if not competizioni:
-                browser.close()
-                raise SessionExpired(
-                    "Nessuna competizione trovata nella dashboard: sessione scaduta o HTML cambiato."
-                )
-
-            for nome_comp, id_comp in competizioni.items():
-                try:
-                    risultati[nome_comp] = {
-                        "id_comp": id_comp,
-                        **self._naviga_e_intercetta_formazioni(page, id_comp, timeout_ms),
-                    }
-                except PlaywrightTimeoutError:
-                    logger.warning(
-                        "Timeout formazioni per competizione '%s' (id_comp=%s)", nome_comp, id_comp
-                    )
-                    risultati[nome_comp] = None
-
-            browser.close()
+            risultati[slug] = {"id_comp": id_comp, "giornata": giornata, "dati": dati} if dati else None
 
         return risultati
-
-    def _check_session_file(self):
-        if not os.path.exists(settings.fanta_session_file):
-            raise SessionFileMissing(
-                f"{settings.fanta_session_file} non trovato: esegui prima capture_login_session.py"
-            )
