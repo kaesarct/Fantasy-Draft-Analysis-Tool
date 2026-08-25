@@ -174,12 +174,15 @@ interface PendingMerge {
                   pButton
                   size="small"
                   label="Unisci qui"
+                  [disabled]="mergeBusy()"
                   [loading]="mergingKey() === pairKey(pair)"
                   (click)="mergeInto(p, pair)"
                 ></button>
               </div>
             }
-            <button class="dismiss-btn" (click)="dismissPair(pair)">Rifiuta — non è la stessa persona</button>
+            <button class="dismiss-btn" [disabled]="mergeBusy()" (click)="dismissPair(pair)">
+              {{ dismissingKey() === pairKey(pair) ? 'Rifiuto in corso…' : 'Rifiuta — non è la stessa persona' }}
+            </button>
           </div>
         }
         @empty {
@@ -238,6 +241,7 @@ interface PendingMerge {
                   pButton
                   size="small"
                   label="Unisci qui"
+                  [disabled]="mergeBusy()"
                   [loading]="mergingKey() === pairKey(pair)"
                   (click)="mergeManualInto(p, pair)"
                 ></button>
@@ -284,6 +288,7 @@ interface PendingMerge {
       font-size: 12px; padding: 4px 0 0; text-decoration: underline;
     }
     .dismiss-btn:hover { color: var(--text-negative, #e05260); }
+    .dismiss-btn:disabled { cursor: not-allowed; opacity: 0.5; text-decoration: none; }
 
     .manual-pick { display: flex; align-items: center; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
     .manual-drop { min-width: 220px; }
@@ -319,6 +324,7 @@ export class AdminComponent implements OnInit {
   mergeCandidates = signal<any[]>([]);
   loadingMergeCandidates = signal(false);
   mergingKey = signal<string | null>(null);
+  dismissingKey = signal<string | null>(null);
   allPlayersForMerge = signal<any[]>([]);
   pendingMerge = signal<PendingMerge | null>(null);
   resolvingConflict = signal(false);
@@ -451,6 +457,10 @@ export class AdminComponent implements OnInit {
     return `${pair.player_a.id}-${pair.player_b.id}`;
   }
 
+  mergeBusy(): boolean {
+    return this.mergingKey() !== null || this.dismissingKey() !== null;
+  }
+
   mergeInto(keep: any, pair: any) {
     const remove = pair.player_a.id === keep.id ? pair.player_b : pair.player_a;
     this.mergingKey.set(this.pairKey(pair));
@@ -543,12 +553,17 @@ export class AdminComponent implements OnInit {
   }
 
   dismissPair(pair: any) {
+    this.dismissingKey.set(this.pairKey(pair));
     this.api.dismissPlayerMerge(pair.player_a.id, pair.player_b.id).subscribe({
       next: () => {
+        this.dismissingKey.set(null);
         this.mergeCandidates.set(this.mergeCandidates().filter(p => this.pairKey(p) !== this.pairKey(pair)));
         this.setMessage('Coppia rifiutata: non verrà più suggerita.', false);
       },
-      error: err => this.setMessage(err.error?.detail || 'Errore nel rifiuto.', true),
+      error: err => {
+        this.dismissingKey.set(null);
+        this.setMessage(err.error?.detail || 'Errore nel rifiuto.', true);
+      },
     });
   }
 
