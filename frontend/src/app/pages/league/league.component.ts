@@ -38,8 +38,8 @@ const LEAGUE_TABS = [
         />
       </div>
 
-      <p-tabView (activeIndexChange)="onTabChange($event)">
-        @for (tab of tabs; track tab.type) {
+      <p-tabView [(activeIndex)]="activeTab" (activeIndexChange)="onTabChange($event)">
+        @for (tab of tabs(); track tab.type) {
           <p-tabPanel [header]="tab.label">
             @if (loading()) {
               <p-skeleton height="300px" />
@@ -121,7 +121,7 @@ const LEAGUE_TABS = [
   `],
 })
 export class LeagueComponent implements OnInit {
-  tabs = LEAGUE_TABS;
+  tabs = signal(LEAGUE_TABS);
   seasons = signal<any[]>([]);
   standings = signal<any[]>([]);
   loading = signal(false);
@@ -136,18 +136,34 @@ export class LeagueComponent implements OnInit {
       const current = data.find(s => s.is_current) ?? data[0];
       if (current) {
         this.selectedSeason = current.id;
-        this.loadStandings();
+        this.onSeasonChange();
       }
     });
   }
 
-  onSeasonChange() { this.loadStandings(); }
+  onSeasonChange() {
+    if (!this.selectedSeason) return;
+    this.activeTab = 0;
+    this.api.getSeasonCompetitions(this.selectedSeason).subscribe({
+      next: comps => {
+        const types = new Set(comps.map(c => c.type));
+        this.tabs.set(LEAGUE_TABS.filter(t => types.has(t.type)));
+        this.loadStandings();
+      },
+      error: () => {
+        this.tabs.set(LEAGUE_TABS);
+        this.loadStandings();
+      },
+    });
+  }
+
   onTabChange(idx: number) { this.activeTab = idx; this.loadStandings(); }
 
   loadStandings() {
-    if (!this.selectedSeason) return;
+    const tabs = this.tabs();
+    if (!this.selectedSeason || !tabs.length) { this.standings.set([]); return; }
     this.loading.set(true);
-    const compType = this.tabs[this.activeTab].type;
+    const compType = tabs[this.activeTab].type;
     this.api.getSeasonStandings(this.selectedSeason, compType).subscribe({
       next: data => { this.standings.set(data); this.loading.set(false); },
       error: ()  => this.loading.set(false),
