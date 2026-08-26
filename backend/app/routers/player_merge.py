@@ -431,10 +431,13 @@ def merge_players(payload: MergeRequest, db: Session = Depends(get_db), _admin: 
         db.commit()
         return {"merged": False, "relinked": relinked, "conflicts": conflicts, "unresolved": unresolved}
 
-    low, high = _ordered_pair(payload.keep_id, payload.remove_id)
+    # Il giocatore "remove" sta per essere cancellato: ripulisco ogni suo
+    # rifiuto, non solo quello con "keep" (potrebbe essere stato rifiutato
+    # anche contro un terzo giocatore prima di una separazione di ruoli,
+    # rendendo quel rifiuto obsoleto) — altrimenti la FK blocca la delete.
     db.query(PlayerMergeDismissal).filter(
-        PlayerMergeDismissal.player_id_low == low,
-        PlayerMergeDismissal.player_id_high == high,
+        (PlayerMergeDismissal.player_id_low == payload.remove_id)
+        | (PlayerMergeDismissal.player_id_high == payload.remove_id)
     ).delete()
 
     db.delete(remove)
