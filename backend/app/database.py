@@ -126,7 +126,7 @@ def _migrate_dedupe_players():
     altrove) alla riga con fanta_id ed elimina il duplicato. Idempotente:
     se non ci sono piu' duplicati non fa nulla."""
     from sqlalchemy import func
-    from app.models.player import Player
+    from app.models.player import Player, PlayerArchiveSeasonStat
     from app.models.fanta_team import FantaRoster
 
     db = SessionLocal()
@@ -151,6 +151,13 @@ def _migrate_dedupe_players():
 
             old_player = without_fanta_id[0]
             keep_player = with_fanta_id[0]
+            if old_player.role and keep_player.role and old_player.role != keep_player.role:
+                # Ruoli incompatibili (es. P/D): quasi certo che siano due
+                # persone reali diverse con lo stesso nome, non un
+                # giocatore storico poi arrivato al sync live — non unire
+                # (rispetta anche una eventuale separazione fatta a mano
+                # via /player-merge/split-role).
+                continue
 
             rosters = db.query(FantaRoster).filter(FantaRoster.player_id == old_player.id).all()
             for roster in rosters:
@@ -166,8 +173,25 @@ def _migrate_dedupe_players():
                 roster.player_id = keep_player.id
                 relinked_rosters += 1
 
+            for archive_row in db.query(PlayerArchiveSeasonStat).filter(
+                PlayerArchiveSeasonStat.player_id == old_player.id
+            ).all():
+                conflict = db.query(PlayerArchiveSeasonStat).filter(
+                    PlayerArchiveSeasonStat.player_id == keep_player.id,
+                    PlayerArchiveSeasonStat.season_id == archive_row.season_id,
+                    PlayerArchiveSeasonStat.team_name == archive_row.team_name,
+                ).first()
+                if conflict:
+                    # Stessa stagione/squadra gia' presente sull'altra riga:
+                    # lascio quella vecchia com'e', non sovrascrivo.
+                    continue
+                archive_row.player_id = keep_player.id
+
             db.flush()
-            remaining = db.query(FantaRoster).filter(FantaRoster.player_id == old_player.id).count()
+            remaining = (
+                db.query(FantaRoster).filter(FantaRoster.player_id == old_player.id).count()
+                + db.query(PlayerArchiveSeasonStat).filter(PlayerArchiveSeasonStat.player_id == old_player.id).count()
+            )
             if remaining == 0:
                 db.delete(old_player)
                 merged_players += 1
