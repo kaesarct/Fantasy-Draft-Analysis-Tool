@@ -250,11 +250,18 @@ interface PendingMerge {
                 <button
                   pButton size="small" class="p-button-outlined"
                   [label]="'Separa ruolo ' + role + ' in un nuovo giocatore'"
-                  [disabled]="splittingKey() !== null || c.anchor_roles.includes(role)"
+                  [disabled]="splittingKey() !== null || confirmingKey() !== null || c.anchor_roles.includes(role)"
                   [loading]="splittingKey() === (c.player_id + '-' + role)"
                   (click)="splitRole(c, role)"
                 ></button>
               }
+              <button
+                pButton size="small" class="p-button-outlined confirm-btn"
+                label="✅ È la stessa persona — consolida"
+                [disabled]="splittingKey() !== null || confirmingKey() !== null"
+                [loading]="confirmingKey() === c.player_id"
+                (click)="confirmRoleConflict(c)"
+              ></button>
             </div>
           </div>
         }
@@ -361,6 +368,7 @@ interface PendingMerge {
     }
     .role-conflict-entry.is-anchor { border: 1px solid rgba(76,175,80,.4); }
     .role-conflict-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 8px; }
+    .confirm-btn { margin-left: auto; }
     .dismiss-btn {
       background: none; border: none; cursor: pointer; color: var(--text-muted);
       font-size: 12px; padding: 4px 0 0; text-decoration: underline;
@@ -407,6 +415,7 @@ export class AdminComponent implements OnInit {
   roleConflicts = signal<any[]>([]);
   loadingRoleConflicts = signal(false);
   splittingKey = signal<string | null>(null);
+  confirmingKey = signal<number | null>(null);
   showLowSeverity = signal(false);
   allPlayersForMerge = signal<any[]>([]);
   pendingMerge = signal<PendingMerge | null>(null);
@@ -575,6 +584,21 @@ export class AdminComponent implements OnInit {
       error: err => {
         this.splittingKey.set(null);
         this.setMessage(err.error?.detail || 'Errore durante la separazione.', true);
+      },
+    });
+  }
+
+  confirmRoleConflict(c: any) {
+    this.confirmingKey.set(c.player_id);
+    this.api.confirmRoleConflict(c.player_id).subscribe({
+      next: () => {
+        this.confirmingKey.set(null);
+        this.roleConflicts.set(this.roleConflicts().filter(x => x.player_id !== c.player_id));
+        this.setMessage(`"${c.player_name}" confermato come una sola persona.`, false);
+      },
+      error: err => {
+        this.confirmingKey.set(null);
+        this.setMessage(err.error?.detail || 'Errore durante la conferma.', true);
       },
     });
   }

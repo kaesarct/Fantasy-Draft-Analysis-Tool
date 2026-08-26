@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.player import Player, PlayerSnapshot, PlayerMatchScore, PlayerArchiveSeasonStat
-from app.models.player_merge import PlayerMergeDismissal
+from app.models.player_merge import PlayerMergeDismissal, PlayerRoleConflictConfirmation
 from app.models.season import Season
 from app.models.season_data import PlayerSeasonStat as ExcelPlayerSeasonStat, PlayerSeasonPrice
 from app.models.fanta_team import FantaRoster, FantaRosterTempSub
@@ -167,9 +167,14 @@ def get_role_conflicts(db: Session = Depends(get_db), _admin: str = Depends(requ
     players_by_id = {
         p.id: p for p in db.query(Player).filter(Player.id.in_(entries_by_player.keys())).all()
     }
+    confirmed_ids = {
+        c.player_id for c in db.query(PlayerRoleConflictConfirmation).all()
+    }
 
     conflicts = []
     for pid, entries in entries_by_player.items():
+        if pid in confirmed_ids:
+            continue
         roles = {e["role"] for e in entries}
         if len(roles) < 2:
             continue
@@ -191,6 +196,25 @@ def get_role_conflicts(db: Session = Depends(get_db), _admin: str = Depends(requ
         })
     conflicts.sort(key=lambda c: (c["severity"] != "alta", c["player_name"] or ""))
     return conflicts
+
+
+class ConfirmRoleConflictRequest(BaseModel):
+    player_id: int
+
+
+@router.post("/role-conflicts/confirm")
+def confirm_role_conflict(
+    payload: ConfirmRoleConflictRequest, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    """Segna il giocatore come UNA SOLA persona reale (es. evoluzione di
+    ruolo in carriera): nessuna modifica ai dati, solo esce dalla lista."""
+    existing = db.query(PlayerRoleConflictConfirmation).filter(
+        PlayerRoleConflictConfirmation.player_id == payload.player_id
+    ).first()
+    if not existing:
+        db.add(PlayerRoleConflictConfirmation(player_id=payload.player_id))
+        db.commit()
+    return {"ok": True}
 
 
 class SplitRoleRequest(BaseModel):
