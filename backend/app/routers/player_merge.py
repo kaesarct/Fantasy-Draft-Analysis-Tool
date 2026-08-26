@@ -38,13 +38,14 @@ def _normalize_name(name: str) -> str:
 
 
 def _suffix_variant(norm_a: str, norm_b: str) -> bool:
-    """True se una stringa e' l'altra con in piu' un suffisso breve
-    (1-3 lettere, es. "romagnoli" / "romagnoli a")."""
+    """True se una stringa e' l'altra con in piu' una singola parola finale
+    di disambiguazione: un'iniziale ("romagnoli" / "romagnoli a") o un nome
+    di battesimo intero ("accardi" / "accardi pietro")."""
     shorter, longer = (norm_a, norm_b) if len(norm_a) < len(norm_b) else (norm_b, norm_a)
     if not longer.startswith(shorter + " "):
         return False
     suffix = longer[len(shorter) + 1:]
-    return 1 <= len(suffix) <= 3
+    return 1 <= len(suffix) <= 20 and " " not in suffix
 
 
 def _ordered_pair(id_a: int, id_b: int) -> tuple[int, int]:
