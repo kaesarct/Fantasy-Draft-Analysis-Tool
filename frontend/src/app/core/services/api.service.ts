@@ -268,6 +268,14 @@ export class ApiService {
     return this.http.post(`${this.base}/player-merge/dismiss`, { player_id_a: playerIdA, player_id_b: playerIdB });
   }
 
+  getPlayerRoleConflicts(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/player-merge/role-conflicts`);
+  }
+
+  splitPlayerRole(playerId: number, role: string, newName?: string): Observable<any> {
+    return this.http.post(`${this.base}/player-merge/split-role`, { player_id: playerId, role, new_name: newName });
+  }
+
   // ── Gestione squadre (admin) ──────────────────────────────────
   createFantaTeam(data: { name: string; season_id: number; league_id: number }): Observable<any> {
     return this.http.post(`${this.base}/fanta-teams`, data);

@@ -202,6 +202,67 @@ interface PendingMerge {
         }
       </div>
 
+      <!-- Unioni sospette (nome identico, ruoli incompatibili) -->
+      <div class="section-title">🧬 Unioni da verificare (ruoli incompatibili)</div>
+      <div class="card mb-4 merge-panel">
+        <p class="text-muted" style="padding:14px 16px 0; font-size:12px; margin:0;">
+          Giocatori con nome ESATTAMENTE identico (mai passati dal controllo sopra, che confronta solo nomi
+          diversi) ma con ruoli che non possono coesistere in una carriera reale — quasi sempre due persone
+          diverse unite per coincidenza di cognome durante un import storico.
+        </p>
+        <div class="merge-toolbar">
+          <button
+            pButton label="Ricontrolla" size="small" class="p-button-outlined"
+            [loading]="loadingRoleConflicts()" (click)="loadRoleConflicts()"
+          ></button>
+          <span class="text-muted" style="font-size:12px">
+            {{ highSeverityConflicts().length }} da controllare ora
+            @if (lowSeverityConflicts().length) {
+              · {{ lowSeverityConflicts().length }} probabili evoluzioni di ruolo (nascoste)
+              <button class="dismiss-btn" style="margin-left:6px" (click)="showLowSeverity.set(!showLowSeverity())">
+                {{ showLowSeverity() ? 'nascondi' : 'mostra comunque' }}
+              </button>
+            }
+          </span>
+        </div>
+        @for (c of (showLowSeverity() ? roleConflicts() : highSeverityConflicts()); track c.player_id) {
+          <div class="merge-pair">
+            <div class="merge-row">
+              <span class="merge-name">{{ c.player_name }}</span>
+              @if (!c.fanta_id) {
+                <span class="badge badge-red" style="font-size:10px">vuoto</span>
+              }
+              @if (c.severity === 'bassa') {
+                <span class="text-muted" style="font-size:11px">(probabile evoluzione di ruolo)</span>
+              }
+            </div>
+            <div class="role-conflict-entries">
+              @for (e of c.entries; track e.source + e.row_id) {
+                <span class="role-conflict-entry" [class.is-anchor]="e.source !== 'archive'">
+                  <span class="role-badge role-{{ e.role }}">{{ e.role }}</span>
+                  {{ e.season_label }} — {{ e.team || '?' }}
+                  <span class="text-muted">({{ e.source === 'archive' ? 'archivio storico' : 'excel/live' }})</span>
+                </span>
+              }
+            </div>
+            <div class="role-conflict-actions">
+              @for (role of distinctRoles(c); track role) {
+                <button
+                  pButton size="small" class="p-button-outlined"
+                  [label]="'Separa ruolo ' + role + ' in un nuovo giocatore'"
+                  [disabled]="splittingKey() !== null || c.anchor_roles.includes(role)"
+                  [loading]="splittingKey() === (c.player_id + '-' + role)"
+                  (click)="splitRole(c, role)"
+                ></button>
+              }
+            </div>
+          </div>
+        }
+        @if (!loadingRoleConflicts() && !roleConflicts().length) {
+          <p class="text-muted" style="padding:20px;">Nessuna unione sospetta trovata.</p>
+        }
+      </div>
+
       <!-- Merge manuale -->
       <div class="section-title">🔍 Unisci manualmente</div>
       <div class="card mb-4 merge-panel">
@@ -293,6 +354,13 @@ interface PendingMerge {
     .merge-row.empty-row { opacity: 0.6; }
     .merge-name { font-weight: 600; font-size: 13px; min-width: 140px; }
     .merge-stats { font-size: 12px; flex: 1; min-width: 200px; }
+    .role-conflict-entries { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; }
+    .role-conflict-entry {
+      font-size: 11px; padding: 3px 8px; border-radius: 6px;
+      background: var(--bg-subtle, rgba(255,255,255,.05)); display: inline-flex; align-items: center; gap: 5px;
+    }
+    .role-conflict-entry.is-anchor { border: 1px solid rgba(76,175,80,.4); }
+    .role-conflict-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 8px; }
     .dismiss-btn {
       background: none; border: none; cursor: pointer; color: var(--text-muted);
       font-size: 12px; padding: 4px 0 0; text-decoration: underline;
@@ -336,6 +404,10 @@ export class AdminComponent implements OnInit {
   loadingMergeCandidates = signal(false);
   mergingKey = signal<string | null>(null);
   dismissingKey = signal<string | null>(null);
+  roleConflicts = signal<any[]>([]);
+  loadingRoleConflicts = signal(false);
+  splittingKey = signal<string | null>(null);
+  showLowSeverity = signal(false);
   allPlayersForMerge = signal<any[]>([]);
   pendingMerge = signal<PendingMerge | null>(null);
   resolvingConflict = signal(false);
@@ -351,6 +423,7 @@ export class AdminComponent implements OnInit {
     this.loadSeasons();
     this.loadDetectedMatchday();
     this.loadMergeCandidates();
+    this.loadRoleConflicts();
     this.loadAllPlayersForMerge();
   }
 
@@ -460,6 +533,48 @@ export class AdminComponent implements OnInit {
       error: err => {
         this.loadingMergeCandidates.set(false);
         this.setMessage(err.error?.detail || 'Errore nel ricontrollo dei duplicati.', true);
+      },
+    });
+  }
+
+  loadRoleConflicts() {
+    this.loadingRoleConflicts.set(true);
+    this.api.getPlayerRoleConflicts().subscribe({
+      next: conflicts => {
+        this.roleConflicts.set(conflicts);
+        this.loadingRoleConflicts.set(false);
+      },
+      error: err => {
+        this.loadingRoleConflicts.set(false);
+        this.setMessage(err.error?.detail || 'Errore nel controllo dei ruoli incompatibili.', true);
+      },
+    });
+  }
+
+  highSeverityConflicts() {
+    return this.roleConflicts().filter(c => c.severity === 'alta');
+  }
+
+  lowSeverityConflicts() {
+    return this.roleConflicts().filter(c => c.severity !== 'alta');
+  }
+
+  distinctRoles(c: any): string[] {
+    return Array.from(new Set(c.entries.map((e: any) => e.role))) as string[];
+  }
+
+  splitRole(c: any, role: string) {
+    const key = `${c.player_id}-${role}`;
+    this.splittingKey.set(key);
+    this.api.splitPlayerRole(c.player_id, role).subscribe({
+      next: res => {
+        this.splittingKey.set(null);
+        this.setMessage(`Ruolo "${role}" separato in un nuovo giocatore (${res.moved_rows} stagioni spostate).`, false);
+        this.loadRoleConflicts();
+      },
+      error: err => {
+        this.splittingKey.set(null);
+        this.setMessage(err.error?.detail || 'Errore durante la separazione.', true);
       },
     });
   }

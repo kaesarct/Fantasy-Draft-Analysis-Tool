@@ -128,6 +128,142 @@ def get_merge_candidates(db: Session = Depends(get_db), _admin: str = Depends(re
     ]
 
 
+@router.get("/role-conflicts")
+def get_role_conflicts(db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    """Giocatori con nome ESATTAMENTE identico (non solo simile, quindi mai
+    passati dal check /candidates) che pero' hanno ruoli incompatibili tra
+    le stagioni — segno quasi certo che il match per nome ha unito due
+    persone reali diverse (es. un portiere storico e un difensore moderno
+    con lo stesso cognome nudo, senza alcuna iniziale a disambiguare)."""
+    labels = {s.id: s.label for s in db.query(Season.id, Season.label).all()}
+
+    entries_by_player: dict[int, list[dict]] = {}
+
+    def _add(pid, source, row_id, season_id, role, team):
+        if not role:
+            return
+        entries_by_player.setdefault(pid, []).append({
+            "source": source, "row_id": row_id, "season_id": season_id,
+            "season_label": labels.get(season_id), "role": role, "team": team,
+        })
+
+    for r in db.query(PlayerArchiveSeasonStat).all():
+        _add(r.player_id, "archive", r.id, r.season_id, r.role, r.team_name)
+
+    fanta_id_by_player = dict(
+        db.query(Player.id, Player.fanta_id).filter(Player.fanta_id.isnot(None)).all()
+    )
+    player_id_by_fanta = {v: k for k, v in fanta_id_by_player.items()}
+
+    for r in db.query(ExcelPlayerSeasonStat).all():
+        pid = player_id_by_fanta.get(r.fanta_player_id)
+        if pid:
+            _add(pid, "excel_stat", r.id, r.season_id, r.role, r.team)
+    for r in db.query(PlayerSeasonPrice).all():
+        pid = player_id_by_fanta.get(r.fanta_player_id)
+        if pid:
+            _add(pid, "excel_price", r.id, r.season_id, r.role, r.team)
+
+    players_by_id = {
+        p.id: p for p in db.query(Player).filter(Player.id.in_(entries_by_player.keys())).all()
+    }
+
+    conflicts = []
+    for pid, entries in entries_by_player.items():
+        roles = {e["role"] for e in entries}
+        if len(roles) < 2:
+            continue
+        p = players_by_id.get(pid)
+        entries.sort(key=lambda e: (e["season_id"], e["source"]))
+        anchor_roles = {e["role"] for e in entries if e["source"] != "archive"}
+        # "P" (portiere) misto a un ruolo di movimento e' impossibile per una
+        # persona reale: segnale forte di due giocatori diversi uniti per
+        # coincidenza di cognome. Un mix D/C/A e' spesso solo evoluzione di
+        # ruolo nella carriera dello stesso giocatore (es. terzino/mediano).
+        severity = "alta" if "P" in roles and len(roles) > 1 else "bassa"
+        conflicts.append({
+            "player_id": pid,
+            "player_name": p.name if p else None,
+            "fanta_id": fanta_id_by_player.get(pid),
+            "anchor_roles": sorted(anchor_roles),
+            "severity": severity,
+            "entries": entries,
+        })
+    conflicts.sort(key=lambda c: (c["severity"] != "alta", c["player_name"] or ""))
+    return conflicts
+
+
+class SplitRoleRequest(BaseModel):
+    player_id: int
+    role: str
+    new_name: str | None = None
+
+
+@router.post("/split-role")
+def split_role(payload: SplitRoleRequest, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    """Estrae in un nuovo giocatore le sole righe d'archivio storico
+    (player_id) con il ruolo indicato. Non tocca mai fanta_id/dati
+    Excel/live: se quel ruolo e' anche quello dell'identita' con fanta_id,
+    va separato l'ALTRO ruolo (l'identita' con fanta_id resta dove e')."""
+    original = db.query(Player).filter(Player.id == payload.player_id).first()
+    if not original:
+        raise HTTPException(404, "Giocatore non trovato")
+
+    archive_rows = db.query(PlayerArchiveSeasonStat).filter(
+        PlayerArchiveSeasonStat.player_id == payload.player_id,
+        PlayerArchiveSeasonStat.role == payload.role,
+    ).all()
+    if not archive_rows:
+        raise HTTPException(400, "Nessuna riga d'archivio con questo ruolo per questo giocatore")
+
+    if original.fanta_id:
+        excel_roles = {
+            r[0] for r in db.query(ExcelPlayerSeasonStat.role).filter(
+                ExcelPlayerSeasonStat.fanta_player_id == original.fanta_id,
+                ExcelPlayerSeasonStat.role.isnot(None),
+            ).all()
+        } | {
+            r[0] for r in db.query(PlayerSeasonPrice.role).filter(
+                PlayerSeasonPrice.fanta_player_id == original.fanta_id,
+                PlayerSeasonPrice.role.isnot(None),
+            ).all()
+        }
+        if payload.role in excel_roles:
+            raise HTTPException(
+                400,
+                "Questo ruolo e' collegato ai dati Excel/live (fanta_id) del giocatore: "
+                "non puo' essere separato. Separa l'altro ruolo.",
+            )
+
+    new_player = Player(name=payload.new_name or original.name, role=payload.role)
+    db.add(new_player)
+    db.flush()
+    for r in archive_rows:
+        r.player_id = new_player.id
+    db.flush()
+
+    if original.role == payload.role:
+        remaining_archive = db.query(PlayerArchiveSeasonStat).filter(
+            PlayerArchiveSeasonStat.player_id == original.id
+        ).first()
+        if remaining_archive:
+            original.role = remaining_archive.role
+        elif original.fanta_id:
+            remaining_excel = (
+                db.query(ExcelPlayerSeasonStat.role)
+                .filter(ExcelPlayerSeasonStat.fanta_player_id == original.fanta_id, ExcelPlayerSeasonStat.role.isnot(None))
+                .first()
+                or db.query(PlayerSeasonPrice.role)
+                .filter(PlayerSeasonPrice.fanta_player_id == original.fanta_id, PlayerSeasonPrice.role.isnot(None))
+                .first()
+            )
+            if remaining_excel:
+                original.role = remaining_excel[0]
+
+    db.commit()
+    return {"ok": True, "new_player_id": new_player.id, "moved_rows": len(archive_rows)}
+
+
 class DismissRequest(BaseModel):
     player_id_a: int
     player_id_b: int
