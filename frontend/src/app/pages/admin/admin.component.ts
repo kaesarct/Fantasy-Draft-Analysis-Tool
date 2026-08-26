@@ -170,7 +170,7 @@ interface PendingMerge {
                   FVM {{ p.fvm_min ?? '—' }}–{{ p.fvm_max ?? '—' }} ·
                   Diff {{ p.diff_min ?? '—' }}/{{ p.diff_max ?? '—' }}
                   @if (p.seasons?.length) {
-                    · <span [title]="p.seasons.join(', ')">{{ p.seasons.length }} stagioni: {{ p.seasons.join(', ') }}</span>
+                    · <span [title]="seasonsSummary(p.seasons)">{{ p.seasons.length }} stagioni: {{ seasonsSummary(p.seasons) }}</span>
                   } @else {
                     · <span class="text-negative">nessuna stagione</span>
                   }
@@ -187,7 +187,7 @@ interface PendingMerge {
             }
             @if (seasonOverlap(pair); as overlap) {
               <p class="text-muted" [class.text-negative]="overlap.length" style="padding:0 0 4px; font-size:11px;">
-                {{ overlap.length ? '⚠️ Stagioni in comune: ' + overlap.join(', ') + ' — probabile persona diversa' : '✅ Nessuna stagione in comune — probabile stesso giocatore rinominato' }}
+                {{ overlap.length ? '⚠️ Stagioni in comune: ' + seasonsSummary(overlap) + ' — probabile persona diversa' : '✅ Nessuna stagione in comune — probabile stesso giocatore rinominato' }}
               </p>
             }
             <button class="dismiss-btn" [disabled]="mergeBusy()" (click)="dismissPair(pair)">
@@ -611,11 +611,16 @@ export class AdminComponent implements OnInit {
     return this.mergingKey() !== null || this.dismissingKey() !== null;
   }
 
-  seasonOverlap(pair: any): string[] | null {
-    const a: string[] = pair.player_a.seasons ?? [];
-    const b: string[] = pair.player_b.seasons ?? [];
+  seasonsSummary(seasons: { label: string; team: string | null }[]): string {
+    return seasons.map(s => s.team ? `${s.label} (${s.team})` : s.label).join(', ');
+  }
+
+  seasonOverlap(pair: any): { label: string; team: string | null }[] | null {
+    const a: { season_id: number }[] = pair.player_a.seasons ?? [];
+    const b: { season_id: number }[] = pair.player_b.seasons ?? [];
     if (!a.length || !b.length) return null;
-    return a.filter(s => b.includes(s));
+    const bIds = new Set(b.map(s => s.season_id));
+    return a.filter(s => bIds.has(s.season_id)) as any;
   }
 
   mergeInto(keep: any, pair: any) {

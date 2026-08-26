@@ -55,24 +55,37 @@ def _ordered_pair(id_a: int, id_b: int) -> tuple[int, int]:
 
 
 def _player_seasons_maps(db: Session):
-    """Stagioni (id) in cui compare ogni giocatore, per player_id (archivio
-    storico e quotazioni live) e per fanta_id (import Excel 2015-16+) — utile
-    per capire se due candidati al merge si sovrappongono (probabile persona
-    diversa) o si susseguono (probabile stesso giocatore rinominato)."""
-    seasons_by_player: dict[int, set[int]] = {}
-    seasons_by_fanta: dict[int, set[int]] = {}
+    """Stagioni (id) in cui compare ogni giocatore, con la squadra se nota,
+    per player_id (archivio storico e quotazioni live) e per fanta_id
+    (import Excel 2015-16+) — utile per capire se due candidati al merge
+    si sovrappongono (probabile persona diversa) o si susseguono (probabile
+    stesso giocatore rinominato)."""
+    teams_by_player: dict[int, dict[int, set[str]]] = {}
+    teams_by_fanta: dict[int, dict[int, set[str]]] = {}
 
-    for pid, sid in db.query(PlayerArchiveSeasonStat.player_id, PlayerArchiveSeasonStat.season_id).distinct().all():
-        seasons_by_player.setdefault(pid, set()).add(sid)
+    def _note(store, key, sid, team):
+        seasons = store.setdefault(key, {})
+        seasons.setdefault(sid, set())
+        if team:
+            seasons[sid].add(team)
+
+    for pid, sid, team in db.query(
+        PlayerArchiveSeasonStat.player_id, PlayerArchiveSeasonStat.season_id, PlayerArchiveSeasonStat.team_name
+    ).distinct().all():
+        _note(teams_by_player, pid, sid, team)
     for pid, sid in db.query(PlayerSnapshot.player_id, PlayerSnapshot.season_id).distinct().all():
-        seasons_by_player.setdefault(pid, set()).add(sid)
-    for fid, sid in db.query(ExcelPlayerSeasonStat.fanta_player_id, ExcelPlayerSeasonStat.season_id).distinct().all():
-        seasons_by_fanta.setdefault(fid, set()).add(sid)
-    for fid, sid in db.query(PlayerSeasonPrice.fanta_player_id, PlayerSeasonPrice.season_id).distinct().all():
-        seasons_by_fanta.setdefault(fid, set()).add(sid)
+        _note(teams_by_player, pid, sid, None)
+    for fid, sid, team in db.query(
+        ExcelPlayerSeasonStat.fanta_player_id, ExcelPlayerSeasonStat.season_id, ExcelPlayerSeasonStat.team
+    ).distinct().all():
+        _note(teams_by_fanta, fid, sid, team)
+    for fid, sid, team in db.query(
+        PlayerSeasonPrice.fanta_player_id, PlayerSeasonPrice.season_id, PlayerSeasonPrice.team
+    ).distinct().all():
+        _note(teams_by_fanta, fid, sid, team)
 
     labels = {s.id: s.label for s in db.query(Season.id, Season.label).all()}
-    return seasons_by_player, seasons_by_fanta, labels
+    return teams_by_player, teams_by_fanta, labels
 
 
 @router.get("/candidates")
@@ -108,7 +121,7 @@ def get_merge_candidates(db: Session = Depends(get_db), _admin: str = Depends(re
                     pairs.append((p_a, p_b))
 
     hist_ranges, live_ranges, roles = aggregate_player_ranges(db)
-    seasons_by_player, seasons_by_fanta, season_labels = _player_seasons_maps(db)
+    teams_by_player, teams_by_fanta, season_labels = _player_seasons_maps(db)
 
     def _summary(p: Player) -> dict:
         entry = {
@@ -116,10 +129,20 @@ def get_merge_candidates(db: Session = Depends(get_db), _admin: str = Depends(re
             "secondary_role": p.secondary_role,
         }
         entry.update(player_range_entry(p, hist_ranges, live_ranges, roles))
-        season_ids = set(seasons_by_player.get(p.id, set()))
+        seasons: dict[int, set[str]] = {}
+        for sid, teams in teams_by_player.get(p.id, {}).items():
+            seasons.setdefault(sid, set()).update(teams)
         if p.fanta_id:
-            season_ids |= seasons_by_fanta.get(p.fanta_id, set())
-        entry["seasons"] = sorted(season_labels.get(sid, str(sid)) for sid in season_ids)
+            for sid, teams in teams_by_fanta.get(p.fanta_id, {}).items():
+                seasons.setdefault(sid, set()).update(teams)
+        entry["seasons"] = [
+            {
+                "season_id": sid,
+                "label": season_labels.get(sid, str(sid)),
+                "team": " / ".join(sorted(seasons[sid])) if seasons[sid] else None,
+            }
+            for sid in sorted(seasons)
+        ]
         return entry
 
     return [
