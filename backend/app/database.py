@@ -127,6 +127,7 @@ def _migrate_dedupe_players():
     se non ci sono piu' duplicati non fa nulla."""
     from sqlalchemy import func
     from app.models.player import Player, PlayerArchiveSeasonStat
+    from app.models.player_merge import PlayerMergeDismissal
     from app.models.fanta_team import FantaRoster
 
     db = SessionLocal()
@@ -157,6 +158,15 @@ def _migrate_dedupe_players():
                 # giocatore storico poi arrivato al sync live — non unire
                 # (rispetta anche una eventuale separazione fatta a mano
                 # via /player-merge/split-role).
+                continue
+            low, high = min(old_player.id, keep_player.id), max(old_player.id, keep_player.id)
+            if db.query(PlayerMergeDismissal).filter(
+                PlayerMergeDismissal.player_id_low == low,
+                PlayerMergeDismissal.player_id_high == high,
+            ).first():
+                # L'admin ha rifiutato esplicitamente questa coppia (es. dopo
+                # una separazione manuale di due persone con lo stesso nome
+                # e lo stesso ruolo): non riproporla mai piu' come duplicato.
                 continue
 
             rosters = db.query(FantaRoster).filter(FantaRoster.player_id == old_player.id).all()
