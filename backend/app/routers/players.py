@@ -331,7 +331,7 @@ def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
             "red_cards": (st.red_cards if st else None) or (
                 sum(r.red_cards or 0 for r in archive_rows) if archive_rows else None
             ),
-            "market_value_i": pr.market_value_i if pr else None,
+            "market_value_i": (pr.market_value_i if pr else None) or (archive_main.quota if archive_main else None),
             "market_value_a": (pr.market_value_a if pr else None) or (archive_main.quota if archive_main else None),
             "difference": pr.difference if pr else None,
             "fvm": fvm,
