@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.player import Player, PlayerSnapshot, PlayerMatchScore
+from app.models.player import Player, PlayerSnapshot, PlayerMatchScore, PlayerArchiveSeasonStat
 from app.models.season import Season
 from app.models.season_data import PlayerSeasonStat, PlayerSeasonPrice, PlayerSeasonVote
 
@@ -98,6 +98,7 @@ def list_players(
     # quindi si usa quella con righe per la stagione richiesta.
     latest_snapshot_by_player: dict[int, PlayerSnapshot] = {}
     historical_price_by_fanta_id: dict[int, PlayerSeasonPrice] = {}
+    archive_stat_by_player: dict[int, PlayerArchiveSeasonStat] = {}
     hist_range_by_fanta_id: dict = {}
     live_range_by_player: dict = {}
     roles_by_fanta_id: dict = {}
@@ -121,10 +122,24 @@ def list_players(
                 .all()
             )
             historical_price_by_fanta_id = {pr.fanta_player_id: pr for pr in prices}
-            q = q.filter(
-                Player.fanta_id.isnot(None),
-                Player.fanta_id.in_(historical_price_by_fanta_id.keys()),
-            )
+            if historical_price_by_fanta_id:
+                q = q.filter(
+                    Player.fanta_id.isnot(None),
+                    Player.fanta_id.in_(historical_price_by_fanta_id.keys()),
+                )
+            else:
+                # Archivio pianetafanta (2006-07..2014-15): niente quotazioni,
+                # solo statistiche aggregate di stagione, chiavi per player_id.
+                archive_rows = (
+                    db.query(PlayerArchiveSeasonStat)
+                    .filter(PlayerArchiveSeasonStat.season_id == season_id)
+                    .all()
+                )
+                for row in archive_rows:
+                    existing = archive_stat_by_player.get(row.player_id)
+                    if not existing or (row.presences or 0) > (existing.presences or 0):
+                        archive_stat_by_player[row.player_id] = row
+                q = q.filter(Player.id.in_(archive_stat_by_player.keys()))
     else:
         hist_range_by_fanta_id, live_range_by_player, roles_by_fanta_id = aggregate_player_ranges(db)
 
@@ -144,6 +159,7 @@ def list_players(
         if season_id:
             snap = latest_snapshot_by_player.get(p.id)
             hist_price = historical_price_by_fanta_id.get(p.fanta_id) if p.fanta_id else None
+            archive_stat = archive_stat_by_player.get(p.id)
             if snap:
                 entry["price"], entry["price_diff"], entry["fvm"] = snap.price, snap.price_diff, snap.fvm
             elif hist_price:
@@ -152,6 +168,10 @@ def list_players(
                 entry["fvm"] = hist_price.fvm
                 if hist_price.role:
                     entry["roles"] = [hist_price.role]
+            elif archive_stat:
+                entry["price"] = archive_stat.quota
+                if archive_stat.role:
+                    entry["roles"] = [archive_stat.role]
 
         result.append(entry)
     return result
@@ -237,17 +257,26 @@ def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
     p = db.query(Player).filter(Player.id == player_id).first()
     if not p:
         raise HTTPException(404, "Player not found")
-    if not p.fanta_id:
-        return []
 
-    stats = {
-        s.season_id: s
-        for s in db.query(PlayerSeasonStat).filter(PlayerSeasonStat.fanta_player_id == p.fanta_id).all()
-    }
-    prices = {
-        pr.season_id: pr
-        for pr in db.query(PlayerSeasonPrice).filter(PlayerSeasonPrice.fanta_player_id == p.fanta_id).all()
-    }
+    stats = {}
+    prices = {}
+    if p.fanta_id:
+        stats = {
+            s.season_id: s
+            for s in db.query(PlayerSeasonStat).filter(PlayerSeasonStat.fanta_player_id == p.fanta_id).all()
+        }
+        prices = {
+            pr.season_id: pr
+            for pr in db.query(PlayerSeasonPrice).filter(PlayerSeasonPrice.fanta_player_id == p.fanta_id).all()
+        }
+
+    # Archivio pianetafanta (2006-07..2014-15): chiave per player_id, non
+    # fanta_id. Piu' righe per stagione se il giocatore ha cambiato squadra
+    # in corso d'anno: quella con piu' presenze rappresenta la stagione,
+    # i gol/assist/cartellini si sommano su tutte le squadre.
+    archive_rows_by_season: dict[int, list] = {}
+    for row in db.query(PlayerArchiveSeasonStat).filter(PlayerArchiveSeasonStat.player_id == player_id).all():
+        archive_rows_by_season.setdefault(row.season_id, []).append(row)
 
     fanta_teams_by_season: dict[int, list] = {}
     for season_id, team_name in (
@@ -259,7 +288,7 @@ def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
     ):
         fanta_teams_by_season.setdefault(season_id, []).append(team_name)
 
-    season_ids = set(stats) | set(prices) | set(fanta_teams_by_season)
+    season_ids = set(stats) | set(prices) | set(fanta_teams_by_season) | set(archive_rows_by_season)
     if not season_ids:
         return []
 
@@ -272,24 +301,38 @@ def get_player_season_history(player_id: int, db: Session = Depends(get_db)):
     for sid in season_ids:
         st = stats.get(sid)
         pr = prices.get(sid)
+        archive_rows = archive_rows_by_season.get(sid, [])
+        archive_main = max(archive_rows, key=lambda r: r.presences or 0) if archive_rows else None
         # fvm=0 e' un placeholder per le stagioni precedenti al tracciamento
         # del FVM (vedi list_players), non un valore reale.
         fvm = pr.fvm if pr and pr.fvm else None
         result.append({
             "season_id": sid,
             "season_label": labels.get(sid),
-            "role": (st.role if st else None) or (pr.role if pr else None),
-            "team": (st.team if st else None) or (pr.team if pr else None),
+            "role": (st.role if st else None) or (pr.role if pr else None) or (archive_main.role if archive_main else None),
+            "team": (st.team if st else None) or (pr.team if pr else None) or (
+                " / ".join(sorted({r.team_name for r in archive_rows if r.team_name})) or None
+            ),
             "fanta_teams": sorted(fanta_teams_by_season.get(sid, [])),
-            "matches_played": st.matches_played if st else None,
-            "average_vote": st.average_vote if st else None,
-            "fantasy_average": st.fantasy_average if st else None,
-            "goals_scored": st.goals_scored if st else None,
-            "assists": st.assists if st else None,
-            "yellow_cards": st.yellow_cards if st else None,
-            "red_cards": st.red_cards if st else None,
+            "matches_played": (st.matches_played if st else None) or (
+                sum(r.presences or 0 for r in archive_rows) if archive_rows else None
+            ),
+            "average_vote": (st.average_vote if st else None) or (archive_main.vote_avg3 if archive_main else None),
+            "fantasy_average": (st.fantasy_average if st else None) or (archive_main.vote_fantacalcio if archive_main else None),
+            "goals_scored": (st.goals_scored if st else None) or (
+                sum(r.goals_scored or 0 for r in archive_rows) if archive_rows else None
+            ),
+            "assists": (st.assists if st else None) or (
+                sum(r.assists or 0 for r in archive_rows) if archive_rows else None
+            ),
+            "yellow_cards": (st.yellow_cards if st else None) or (
+                sum(r.yellow_cards or 0 for r in archive_rows) if archive_rows else None
+            ),
+            "red_cards": (st.red_cards if st else None) or (
+                sum(r.red_cards or 0 for r in archive_rows) if archive_rows else None
+            ),
             "market_value_i": pr.market_value_i if pr else None,
-            "market_value_a": pr.market_value_a if pr else None,
+            "market_value_a": (pr.market_value_a if pr else None) or (archive_main.quota if archive_main else None),
             "difference": pr.difference if pr else None,
             "fvm": fvm,
         })
