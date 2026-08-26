@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.player import Player, PlayerSnapshot, PlayerMatchScore
+from app.models.player import Player, PlayerSnapshot, PlayerMatchScore, PlayerArchiveSeasonStat
 from app.models.player_merge import PlayerMergeDismissal
 from app.models.fanta_team import FantaRoster, FantaRosterTempSub
 from app.models.injury import InjuryPlayer
@@ -135,6 +135,7 @@ _UNIQUE_TABLES = [
     (AuctionBid, "player_id", ["auction_id"]),
     (PlayerSnapshot, "player_id", ["season_id", "match_day"]),
     (PlayerMatchScore, "player_id", ["season_id", "match_day"]),
+    (PlayerArchiveSeasonStat, "player_id", ["season_id", "team_name"]),
 ]
 
 
