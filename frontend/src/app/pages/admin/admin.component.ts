@@ -169,6 +169,11 @@ interface PendingMerge {
                   {{ p.price_min ?? '—' }}–{{ p.price_max ?? '—' }} ·
                   FVM {{ p.fvm_min ?? '—' }}–{{ p.fvm_max ?? '—' }} ·
                   Diff {{ p.diff_min ?? '—' }}/{{ p.diff_max ?? '—' }}
+                  @if (p.seasons?.length) {
+                    · <span [title]="p.seasons.join(', ')">{{ p.seasons.length }} stagioni: {{ p.seasons.join(', ') }}</span>
+                  } @else {
+                    · <span class="text-negative">nessuna stagione</span>
+                  }
                 </span>
                 <button
                   pButton
@@ -179,6 +184,11 @@ interface PendingMerge {
                   (click)="mergeInto(p, pair)"
                 ></button>
               </div>
+            }
+            @if (seasonOverlap(pair); as overlap) {
+              <p class="text-muted" [class.text-negative]="overlap.length" style="padding:0 0 4px; font-size:11px;">
+                {{ overlap.length ? '⚠️ Stagioni in comune: ' + overlap.join(', ') + ' — probabile persona diversa' : '✅ Nessuna stagione in comune — probabile stesso giocatore rinominato' }}
+              </p>
             }
             <button class="dismiss-btn" [disabled]="mergeBusy()" (click)="dismissPair(pair)">
               {{ dismissingKey() === pairKey(pair) ? 'Rifiuto in corso…' : 'Rifiuta — non è la stessa persona' }}
@@ -288,6 +298,7 @@ interface PendingMerge {
       font-size: 12px; padding: 4px 0 0; text-decoration: underline;
     }
     .dismiss-btn:hover { color: var(--text-negative, #e05260); }
+    .text-negative { color: var(--text-negative, #e05260); }
     .dismiss-btn:disabled { cursor: not-allowed; opacity: 0.5; text-decoration: none; }
 
     .manual-pick { display: flex; align-items: center; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
@@ -459,6 +470,13 @@ export class AdminComponent implements OnInit {
 
   mergeBusy(): boolean {
     return this.mergingKey() !== null || this.dismissingKey() !== null;
+  }
+
+  seasonOverlap(pair: any): string[] | null {
+    const a: string[] = pair.player_a.seasons ?? [];
+    const b: string[] = pair.player_b.seasons ?? [];
+    if (!a.length || !b.length) return null;
+    return a.filter(s => b.includes(s));
   }
 
   mergeInto(keep: any, pair: any) {

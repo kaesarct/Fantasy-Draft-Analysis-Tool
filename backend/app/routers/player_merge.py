@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.player import Player, PlayerSnapshot, PlayerMatchScore, PlayerArchiveSeasonStat
 from app.models.player_merge import PlayerMergeDismissal
+from app.models.season import Season
+from app.models.season_data import PlayerSeasonStat as ExcelPlayerSeasonStat, PlayerSeasonPrice
 from app.models.fanta_team import FantaRoster, FantaRosterTempSub
 from app.models.injury import InjuryPlayer
 from app.models.serie_a_injury import SerieAInjuryReport, SerieAInjuryArchive
@@ -52,6 +54,27 @@ def _ordered_pair(id_a: int, id_b: int) -> tuple[int, int]:
     return (id_a, id_b) if id_a < id_b else (id_b, id_a)
 
 
+def _player_seasons_maps(db: Session):
+    """Stagioni (id) in cui compare ogni giocatore, per player_id (archivio
+    storico e quotazioni live) e per fanta_id (import Excel 2015-16+) — utile
+    per capire se due candidati al merge si sovrappongono (probabile persona
+    diversa) o si susseguono (probabile stesso giocatore rinominato)."""
+    seasons_by_player: dict[int, set[int]] = {}
+    seasons_by_fanta: dict[int, set[int]] = {}
+
+    for pid, sid in db.query(PlayerArchiveSeasonStat.player_id, PlayerArchiveSeasonStat.season_id).distinct().all():
+        seasons_by_player.setdefault(pid, set()).add(sid)
+    for pid, sid in db.query(PlayerSnapshot.player_id, PlayerSnapshot.season_id).distinct().all():
+        seasons_by_player.setdefault(pid, set()).add(sid)
+    for fid, sid in db.query(ExcelPlayerSeasonStat.fanta_player_id, ExcelPlayerSeasonStat.season_id).distinct().all():
+        seasons_by_fanta.setdefault(fid, set()).add(sid)
+    for fid, sid in db.query(PlayerSeasonPrice.fanta_player_id, PlayerSeasonPrice.season_id).distinct().all():
+        seasons_by_fanta.setdefault(fid, set()).add(sid)
+
+    labels = {s.id: s.label for s in db.query(Season.id, Season.label).all()}
+    return seasons_by_player, seasons_by_fanta, labels
+
+
 @router.get("/candidates")
 def get_merge_candidates(db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     players = db.query(Player).order_by(Player.name).all()
@@ -85,6 +108,7 @@ def get_merge_candidates(db: Session = Depends(get_db), _admin: str = Depends(re
                     pairs.append((p_a, p_b))
 
     hist_ranges, live_ranges, roles = aggregate_player_ranges(db)
+    seasons_by_player, seasons_by_fanta, season_labels = _player_seasons_maps(db)
 
     def _summary(p: Player) -> dict:
         entry = {
@@ -92,6 +116,10 @@ def get_merge_candidates(db: Session = Depends(get_db), _admin: str = Depends(re
             "secondary_role": p.secondary_role,
         }
         entry.update(player_range_entry(p, hist_ranges, live_ranges, roles))
+        season_ids = set(seasons_by_player.get(p.id, set()))
+        if p.fanta_id:
+            season_ids |= seasons_by_fanta.get(p.fanta_id, set())
+        entry["seasons"] = sorted(season_labels.get(sid, str(sid)) for sid in season_ids)
         return entry
 
     return [
