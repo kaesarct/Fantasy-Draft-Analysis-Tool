@@ -16,7 +16,7 @@ import { ApiService } from '../../core/services/api.service';
       } @else if (!allenatore()) {
         <p class="text-muted">Allenatore non trovato.</p>
       } @else {
-        <a routerLink="/teams" class="back-link">← Squadre</a>
+        <a routerLink="/teams" class="back-link">← Allenatori</a>
         <div class="page-header">
           <div class="avatar">{{ allenatore().display_name[0] }}</div>
           <div>
@@ -69,8 +69,8 @@ import { ApiService } from '../../core/services/api.service';
                   <span class="player-name">{{ p.player_name }}</span>
                   <span class="player-acquisitions">
                     @for (acq of p.acquisitions; track acq.season_id + '-' + acq.team_id) {
-                      <span class="acq-chip" [class.inactive]="!acq.is_active">
-                        {{ acq.season_label }} — {{ acq.team_name }}: {{ acq.purchase_price }} FM
+                      <span class="acq-chip">
+                        {{ acq.season_label }} — {{ acq.team_name }}: <strong>{{ acq.purchase_price }} FM</strong>
                       </span>
                     }
                   </span>
@@ -126,8 +126,12 @@ import { ApiService } from '../../core/services/api.service';
     .player-row:last-child { border-bottom: none; }
     .player-name { font-weight: 600; font-size: 13px; min-width: 140px; }
     .player-acquisitions { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
-    .acq-chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--bg-elevated); color: var(--text-muted); }
-    .acq-chip.inactive { opacity: 0.55; text-decoration: line-through; }
+    .acq-chip {
+      font-size: 12px; padding: 4px 10px; border-radius: 6px;
+      background: var(--bg-elevated); border: 1px solid var(--border-color);
+      color: var(--text-primary);
+    }
+    .acq-chip strong { color: var(--accent-green); }
   `],
 })
 export class AllenatoreDetailComponent implements OnInit {
