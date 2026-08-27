@@ -48,6 +48,12 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/allenatori/${id}`);
   }
 
+  getAllenatorePlayers(id: number, seasonId?: number): Observable<any[]> {
+    let params = new HttpParams();
+    if (seasonId) params = params.set('season_id', seasonId);
+    return this.http.get<any[]>(`${this.base}/allenatori/${id}/players`, { params });
+  }
+
   createAllenatore(data: { username: string; display_name: string; email?: string }): Observable<any> {
     return this.http.post(`${this.base}/allenatori`, data);
   }

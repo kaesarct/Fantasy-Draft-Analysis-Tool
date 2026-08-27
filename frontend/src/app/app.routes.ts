@@ -33,9 +33,9 @@ export const routes: Routes = [
       import('./pages/team-detail/team-detail.component').then(m => m.TeamDetailComponent),
   },
   {
-    path: 'allenatori',
+    path: 'allenatori/:id',
     loadComponent: () =>
-      import('./pages/allenatori/allenatori.component').then(m => m.AllenatoriComponent),
+      import('./pages/allenatore-detail/allenatore-detail.component').then(m => m.AllenatoreDetailComponent),
   },
   {
     path: 'league',

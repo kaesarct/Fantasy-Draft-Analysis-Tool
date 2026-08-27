@@ -25,13 +25,25 @@ import { ApiService } from '../../core/services/api.service';
           <div>
             <h1 class="page-title">🛡️ {{ team().name }}</h1>
             <p class="text-secondary">{{ team().season_label }}</p>
+            @if (team().standings?.length) {
+              <div class="standings-row">
+                @for (s of team().standings; track s.competition_id) {
+                  <span class="standing-chip">
+                    {{ s.competition_type === 'SILVER' ? 'Silver' : s.competition_type }}: {{ s.rank }}°/{{ s.total_teams }}
+                    @if (s.is_partial_data) {
+                      <span class="text-muted" title="Per questa stagione abbiamo dati parziali (es. solo il vincitore noto): la posizione potrebbe non essere reale">⚠️</span>
+                    }
+                  </span>
+                }
+              </div>
+            }
           </div>
         </div>
 
         <div class="section-title">👤 Allenatori</div>
         <div class="card mb-4 coach-list">
           @for (c of team().coaches; track c.id) {
-            <span class="assigned-chip" [class.primary]="c.primary">{{ c.primary ? '⭐' : '' }}{{ c.name }}</span>
+            <a [routerLink]="['/allenatori', c.id]" class="assigned-chip" [class.primary]="c.primary">{{ c.primary ? '⭐' : '' }}{{ c.name }}</a>
           }
           @empty {
             <p class="text-muted" style="padding:14px 16px; margin:0;">Nessun allenatore assegnato.</p>
@@ -94,8 +106,16 @@ import { ApiService } from '../../core/services/api.service';
       display: inline-flex; align-items: center; gap: 4px;
       background: var(--bg-elevated); border: 1px solid var(--border-color);
       border-radius: 999px; padding: 4px 12px; font-size: 13px;
+      text-decoration: none; color: var(--text-primary);
     }
+    .assigned-chip:hover { border-color: var(--accent-green); }
     .assigned-chip.primary { border-color: var(--accent-green); }
+
+    .standings-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .standing-chip {
+      font-size: 12px; padding: 2px 10px; border-radius: 999px;
+      background: var(--bg-elevated); border: 1px solid var(--border-color);
+    }
 
     .lineage-list { padding: 0; }
     .lineage-row {

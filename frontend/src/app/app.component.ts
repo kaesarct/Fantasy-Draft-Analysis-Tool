@@ -176,7 +176,6 @@ export class AppComponent implements OnInit {
     { label: 'Dashboard',   route: '/dashboard',  icon: '🏠' },
     { label: 'Classifica',  route: '/league',     icon: '🏆' },
     { label: 'Squadre',     route: '/teams',      icon: '🛡️'  },
-    { label: 'Allenatori',  route: '/allenatori', icon: '👤' },
     { label: 'Giocatori',   route: '/players',    icon: '⚽' },
     { label: 'Partite',     route: '/matches',    icon: '📅' },
     { label: 'Infortuni',   route: '/injuries',   icon: '🏥' },

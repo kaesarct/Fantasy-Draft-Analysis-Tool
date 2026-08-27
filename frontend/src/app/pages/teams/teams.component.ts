@@ -1,6 +1,6 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { DropdownModule } from 'primeng/dropdown';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
@@ -30,7 +30,7 @@ const LEAGUE_LEVELS = [
 
       <div class="teams-grid">
         @for (t of teams(); track t.id) {
-          <a [routerLink]="['/teams', t.id]" class="team-card">
+          <div class="team-card" (click)="goToTeam(t.id)">
             <div class="team-logo">
               @if (t.logo_url) {
                 <img [src]="t.logo_url" [alt]="t.name" />
@@ -41,7 +41,9 @@ const LEAGUE_LEVELS = [
             <div class="team-info">
               <div class="team-name">{{ t.name }}</div>
               <div class="team-coaches text-muted">
-                @for (c of t.coaches; track c.id) { {{ c.name }} }
+                @for (c of t.coaches; track c.id) {
+                  <a [routerLink]="['/allenatori', c.id]" (click)="$event.stopPropagation()" class="coach-link">{{ c.name }}</a>
+                }
               </div>
             </div>
             <div class="team-meta">
@@ -52,7 +54,7 @@ const LEAGUE_LEVELS = [
                 💰 {{ t.remaining_credits }} FM
               </div>
             </div>
-          </a>
+          </div>
         }
         @empty {
           <p class="text-muted">Nessuna squadra trovata.</p>
@@ -70,10 +72,12 @@ const LEAGUE_LEVELS = [
       background: var(--bg-card); border: 1px solid var(--border-color);
       border-radius: var(--radius-md); padding: 16px 20px;
       display: flex; align-items: center; gap: 14px;
-      text-decoration: none; color: var(--text-primary);
+      text-decoration: none; color: var(--text-primary); cursor: pointer;
       transition: border-color var(--transition), transform var(--transition);
     }
     .team-card:hover { border-color: var(--accent-green); transform: translateY(-2px); }
+    .coach-link { color: var(--text-muted); text-decoration: none; }
+    .coach-link:hover { color: var(--accent-green); text-decoration: underline; }
     .team-logo {
       width: 48px; height: 48px; border-radius: 50%; overflow: hidden;
       background: linear-gradient(135deg, var(--accent-gold), var(--accent-orange));
@@ -93,10 +97,12 @@ export class TeamsComponent implements OnInit {
   leagueLevels = LEAGUE_LEVELS;
   selectedLevel: string | null = null;
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private router: Router) {}
 
   ngOnInit() { this.loadTeams(); }
   onLevelChange() { this.loadTeams(); }
+
+  goToTeam(id: number) { this.router.navigate(['/teams', id]); }
 
   loadTeams() {
     this.api.getFantaTeams(undefined, this.selectedLevel ?? undefined).subscribe({

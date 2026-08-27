@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.fanta_allenatore import FantaAllenatore
 from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaRoster, League, FantaTeamLineage
+from app.models.competition import Competition, CompetitionStanding
 from app.services.auth_service import require_admin
 from app.routers.team_merge import _SIMPLE_TABLES, _UNIQUE_TABLES
 
@@ -84,6 +85,44 @@ def update_allenatore(al_id: int, data: AllenatoreUpdate, db: Session = Depends(
     return {"id": a.id, "username": a.username, "display_name": a.display_name, "is_active": a.is_active}
 
 
+def _team_standings_summary(db: Session, team: FantaTeam) -> list[dict]:
+    """Piazzamento di una squadra in ciascuna competizione a cui ha
+    partecipato (ultima giornata registrata). is_partial_data=True quando
+    nessuna squadra della competizione ha "played" valorizzato: significa
+    che quella stagione non ha una classifica reale, solo un piazzamento
+    noto (es. solo il vincitore) inserito come valore puramente ordinale —
+    le altre posizioni in quel caso non sono da considerare affidabili."""
+    standings = db.query(CompetitionStanding).filter(CompetitionStanding.fanta_team_id == team.id).all()
+    if not standings:
+        return []
+    latest_by_comp: dict[int, CompetitionStanding] = {}
+    for s in standings:
+        cur = latest_by_comp.get(s.competition_id)
+        if not cur or s.match_day > cur.match_day:
+            latest_by_comp[s.competition_id] = s
+
+    result = []
+    for comp_id, s in latest_by_comp.items():
+        comp = db.query(Competition).filter(Competition.id == comp_id).first()
+        if not comp:
+            continue
+        all_rows = db.query(CompetitionStanding).filter(
+            CompetitionStanding.competition_id == comp_id,
+            CompetitionStanding.match_day == s.match_day,
+        ).all()
+        is_silver = comp.type == "SILVER"
+        ranked = sorted(all_rows, key=lambda r: (r.total_score if is_silver else r.pts), reverse=True)
+        rank = next((i + 1 for i, r in enumerate(ranked) if r.fanta_team_id == team.id), None)
+        result.append({
+            "competition_id": comp_id,
+            "competition_type": comp.type,
+            "rank": rank,
+            "total_teams": len(ranked),
+            "is_partial_data": all((r.played or 0) == 0 for r in all_rows),
+        })
+    return result
+
+
 @allenatori_router.get("/{al_id}")
 def get_allenatore(al_id: int, db: Session = Depends(get_db)):
     a = db.query(FantaAllenatore).filter(FantaAllenatore.id == al_id).first()
@@ -93,16 +132,70 @@ def get_allenatore(al_id: int, db: Session = Depends(get_db)):
         {
             "team_id": tc.fanta_team.id,
             "team_name": tc.fanta_team.name,
+            "season_id": tc.fanta_team.season_id,
             "season": tc.fanta_team.season.label if tc.fanta_team.season else None,
             "league": tc.fanta_team.league.level if tc.fanta_team.league else None,
             "is_primary": tc.is_primary,
+            "standings": _team_standings_summary(db, tc.fanta_team),
         }
         for tc in a.team_coaches
     ]
+    teams.sort(key=lambda t: t["season_id"] or 0)
     return {
         "id": a.id, "username": a.username, "display_name": a.display_name,
         "email": a.email, "is_active": a.is_active, "teams": teams,
     }
+
+
+@allenatori_router.get("/{al_id}/players")
+def get_allenatore_players(al_id: int, season_id: int | None = None, db: Session = Depends(get_db)):
+    """Tutti i giocatori acquistati nel corso degli anni da una qualsiasi
+    delle squadre gestite da questo allenatore, raggruppati per giocatore —
+    con la lista delle quotazioni pagate ogni volta che e' stato acquistato
+    (anche piu' volte in stagioni diverse)."""
+    a = db.query(FantaAllenatore).filter(FantaAllenatore.id == al_id).first()
+    if not a:
+        raise HTTPException(404, "Allenatore not found")
+
+    team_ids = [tc.fanta_team_id for tc in a.team_coaches]
+    if not team_ids:
+        return []
+
+    q = db.query(FantaRoster).filter(FantaRoster.fanta_team_id.in_(team_ids))
+    if season_id:
+        q = q.filter(FantaRoster.season_id == season_id)
+    rows = q.all()
+    if not rows:
+        return []
+
+    teams_by_id = {
+        t.id: t for t in db.query(FantaTeam).filter(FantaTeam.id.in_(team_ids)).all()
+    }
+
+    by_player: dict[int, dict] = {}
+    for r in rows:
+        entry = by_player.setdefault(r.player_id, {
+            "player_id": r.player_id,
+            "player_name": r.player.name if r.player else None,
+            "role": r.player.role if r.player else None,
+            "acquisitions": [],
+        })
+        team = teams_by_id.get(r.fanta_team_id)
+        entry["acquisitions"].append({
+            "season_id": r.season_id,
+            "season_label": team.season.label if team and team.season else None,
+            "team_id": r.fanta_team_id,
+            "team_name": team.name if team else None,
+            "purchase_price": r.purchase_price,
+            "is_active": r.is_active,
+        })
+
+    result = list(by_player.values())
+    for entry in result:
+        entry["acquisitions"].sort(key=lambda x: x["season_id"] or 0)
+        entry["times_acquired"] = len(entry["acquisitions"])
+    result.sort(key=lambda e: e["player_name"] or "")
+    return result
 
 
 # ── FantaTeams ──────────────────────────────────────────────────────────────
@@ -203,6 +296,7 @@ def get_fanta_team(team_id: int, db: Session = Depends(get_db)):
     ).all()
     return {
         **_team_summary(t),
+        "standings": _team_standings_summary(db, t),
         "roster": [
             {
                 "player_id": r.player_id,
