@@ -212,7 +212,19 @@ export class TeamDetailComponent implements OnInit {
         error: () => this.loading.set(false),
       });
       this.api.getTeamLineage(id).subscribe({ next: l => this.lineage.set(l) });
-      this.api.getTeamRosterHistory(id).subscribe({ next: h => this.rosterHistory.set(h) });
+      this.api.getTeamRosterHistory(id).subscribe({
+        next: h => {
+          for (const ev of h) {
+            ev.acquired = [...ev.acquired].sort(byRoleThenName);
+            ev.released = [...ev.released].sort(byRoleThenName);
+          }
+          this.rosterHistory.set(h);
+        },
+      });
     });
   }
+}
+
+function byRoleThenName(a: any, b: any): number {
+  return ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.player_name.localeCompare(b.player_name);
 }
