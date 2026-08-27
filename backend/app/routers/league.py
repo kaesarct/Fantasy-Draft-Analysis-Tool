@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
-from app.models.competition import Competition, CompetitionStanding, CompetitionType, MatchResult, CompetitionGroup, CompetitionGroupTeam
+from app.models.competition import Competition, CompetitionStanding, CompetitionType, MatchResult, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase
 from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
 
@@ -270,6 +270,107 @@ def get_competition_matches(comp_id: int, match_day: int | None = None, db: Sess
         }
         for r in results
     ]
+
+
+@competitions_router.get("/{comp_id}/bracket")
+def get_competition_bracket(comp_id: int, db: Session = Depends(get_db)):
+    """Vista per le coppe (Ciempions/UEFA/Coppa Italia): classifica calcolata
+    al volo per ogni girone dai risultati (nessuna CompetitionStanding viene
+    salvata per le coppe, a differenza dei campionati principali) + tabellone
+    della fase a eliminazione con gli accoppiamenti (andata/ritorno o gara
+    singola per la finale) raggruppati per fase."""
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(404, "Competizione non trovata")
+
+    teams_by_id = {t.id: t for t in db.query(FantaTeam).filter(FantaTeam.season_id == comp.season_id)}
+    matches = db.query(MatchResult).filter(MatchResult.competition_id == comp_id).all()
+
+    groups_out = []
+    for group in db.query(CompetitionGroup).filter(CompetitionGroup.competition_id == comp_id).order_by(CompetitionGroup.name):
+        team_ids = {
+            row[0] for row in
+            db.query(CompetitionGroupTeam.fanta_team_id).filter(CompetitionGroupTeam.group_id == group.id)
+        }
+        if not team_ids:
+            continue
+        def team_name(tid: int) -> str:
+            team = teams_by_id.get(tid)
+            return team.name if team else f"Squadra #{tid}"
+
+        stats = {
+            tid: {"fanta_team_id": tid, "name": team_name(tid),
+                  "played": 0, "wins": 0, "draws": 0, "losses": 0, "goals_for": 0, "goals_against": 0, "pts": 0}
+            for tid in team_ids
+        }
+        for m in matches:
+            if m.phase != CompetitionPhase.GROUP:
+                continue
+            if m.fanta_team_home_id not in team_ids or m.fanta_team_away_id not in team_ids:
+                continue
+            home, away = stats[m.fanta_team_home_id], stats[m.fanta_team_away_id]
+            home["played"] += 1
+            away["played"] += 1
+            home["goals_for"] += m.goals_home
+            home["goals_against"] += m.goals_away
+            away["goals_for"] += m.goals_away
+            away["goals_against"] += m.goals_home
+            home["pts"] += m.pts_home
+            away["pts"] += m.pts_away
+            if m.pts_home > m.pts_away:
+                home["wins"] += 1
+                away["losses"] += 1
+            elif m.pts_home < m.pts_away:
+                away["wins"] += 1
+                home["losses"] += 1
+            else:
+                home["draws"] += 1
+                away["draws"] += 1
+        standings = sorted(
+            stats.values(),
+            key=lambda s: (s["pts"], s["goals_for"] - s["goals_against"], s["goals_for"]),
+            reverse=True,
+        )
+        groups_out.append({"name": group.name, "standings": standings})
+
+    knockout_matches = [m for m in matches if m.phase != CompetitionPhase.GROUP]
+    phase_order = [CompetitionPhase.ROUND_OF_16, CompetitionPhase.QUARTER_FINAL,
+                   CompetitionPhase.SEMI_FINAL, CompetitionPhase.FINAL]
+    knockout_out = []
+    for phase in phase_order:
+        phase_matches = sorted((m for m in knockout_matches if m.phase == phase), key=lambda m: m.match_day)
+        if not phase_matches:
+            continue
+        ties: dict[frozenset, dict] = {}
+        for m in phase_matches:
+            key = frozenset((m.fanta_team_home_id, m.fanta_team_away_id))
+            tie = ties.setdefault(key, {"legs": [], "goals_by_team": {}})
+            tie["legs"].append({
+                "match_day": m.match_day,
+                "home_team_id": m.fanta_team_home_id, "away_team_id": m.fanta_team_away_id,
+                "score_home": m.score_home, "score_away": m.score_away,
+                "goals_home": m.goals_home, "goals_away": m.goals_away,
+            })
+            goals_by_team = tie["goals_by_team"]
+            goals_by_team[m.fanta_team_home_id] = goals_by_team.get(m.fanta_team_home_id, 0) + m.goals_home
+            goals_by_team[m.fanta_team_away_id] = goals_by_team.get(m.fanta_team_away_id, 0) + m.goals_away
+
+        tie_list = []
+        for key, tie in ties.items():
+            team_ids = list(key)
+            a_id, b_id = team_ids[0], (team_ids[1] if len(team_ids) > 1 else team_ids[0])
+            goals_a = tie["goals_by_team"].get(a_id, 0)
+            goals_b = tie["goals_by_team"].get(b_id, 0)
+            winner_id = a_id if goals_a > goals_b else (b_id if goals_b > goals_a else None)
+            tie_list.append({
+                "team_a_id": a_id, "team_a_name": teams_by_id[a_id].name if a_id in teams_by_id else f"Squadra #{a_id}",
+                "team_b_id": b_id, "team_b_name": teams_by_id[b_id].name if b_id in teams_by_id else f"Squadra #{b_id}",
+                "legs": sorted(tie["legs"], key=lambda l: l["match_day"]),
+                "aggregate_a": goals_a, "aggregate_b": goals_b, "winner_id": winner_id,
+            })
+        knockout_out.append({"phase": phase, "ties": tie_list})
+
+    return {"groups": groups_out, "knockout": knockout_out}
 
 
 class ParticipantAdd(BaseModel):

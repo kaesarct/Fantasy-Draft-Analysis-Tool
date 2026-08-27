@@ -125,6 +125,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/competitions/${compId}/matches`, { params });
   }
 
+  getCompetitionBracket(compId: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/competitions/${compId}/bracket`);
+  }
+
   getStandingsEditor(compId: number, matchDay: number = 1): Observable<any[]> {
     const params = new HttpParams().set('match_day', matchDay);
     return this.http.get<any[]>(`${this.base}/competitions/${compId}/standings-editor`, { params });

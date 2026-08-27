@@ -16,6 +16,15 @@ const LEAGUE_TABS = [
   { label: '🌍 UEFA',   type: 'UEFA'   },
 ];
 
+const CUP_TYPES = new Set(['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP']);
+
+const PHASE_LABELS: Record<string, string> = {
+  ROUND_OF_16: 'Ottavi di finale',
+  QUARTER_FINAL: 'Quarti di finale',
+  SEMI_FINAL: 'Semifinali',
+  FINAL: 'Finale',
+};
+
 @Component({
   selector: 'app-league',
   standalone: true,
@@ -43,6 +52,73 @@ const LEAGUE_TABS = [
           <p-tabPanel [header]="tab.label">
             @if (loading()) {
               <p-skeleton height="300px" />
+            } @else if (isCupType(tab.type)) {
+              @if (!bracket() || (!bracket().groups.length && !bracket().knockout.length)) {
+                <p class="empty-msg">Nessun dato disponibile. Avvia un sync per caricare i dati.</p>
+              } @else {
+                @if (bracket().groups.length) {
+                  <div class="groups-grid">
+                    @for (g of bracket().groups; track g.name) {
+                      <div class="group-card">
+                        <div class="group-title">{{ g.name }}</div>
+                        <table class="group-table">
+                          <thead>
+                            <tr>
+                              <th>Squadra</th>
+                              <th>G</th><th>V</th><th>N</th><th>P</th>
+                              <th>GF</th><th>GS</th><th>Pt</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (s of g.standings; track s.fanta_team_id) {
+                              <tr>
+                                <td class="team-name">{{ s.name }}</td>
+                                <td>{{ s.played }}</td>
+                                <td class="text-positive">{{ s.wins }}</td>
+                                <td>{{ s.draws }}</td>
+                                <td class="text-negative">{{ s.losses }}</td>
+                                <td>{{ s.goals_for }}</td>
+                                <td>{{ s.goals_against }}</td>
+                                <td class="pts-col">{{ s.pts }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+                @if (bracket().knockout.length) {
+                  <div class="knockout-section">
+                    @for (round of bracket().knockout; track round.phase) {
+                      <div class="round-block">
+                        <div class="round-title">{{ phaseLabel(round.phase) }}</div>
+                        <div class="ties-grid">
+                          @for (tie of round.ties; track tie.team_a_id) {
+                            <div class="tie-card">
+                              <div class="tie-row" [class.winner]="tie.winner_id === tie.team_a_id">
+                                <span class="tie-team">{{ tie.team_a_name }}</span>
+                                <span class="tie-score">{{ tie.aggregate_a }}</span>
+                              </div>
+                              <div class="tie-row" [class.winner]="tie.winner_id === tie.team_b_id">
+                                <span class="tie-team">{{ tie.team_b_name }}</span>
+                                <span class="tie-score">{{ tie.aggregate_b }}</span>
+                              </div>
+                              @if (tie.legs.length > 1) {
+                                <div class="tie-legs">
+                                  @for (leg of tie.legs; track leg.match_day) {
+                                    <span>{{ leg.goals_home }}-{{ leg.goals_away }}</span>
+                                  }
+                                </div>
+                              }
+                            </div>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                }
+              }
             } @else {
               <p-table [value]="standings()" styleClass="standing-table" [rowHover]="true">
                 <ng-template pTemplate="header">
@@ -118,15 +194,44 @@ const LEAGUE_TABS = [
     .pos-2 { color: var(--silver-league); font-weight: 700; }
     .pos-3 { color: var(--bronze-league); font-weight: 700; }
     .pos-other { color: var(--text-muted); }
+
+    .empty-msg { text-align: center; padding: 32px; color: var(--text-muted); }
+
+    .groups-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px; margin-bottom: 28px;
+    }
+    .group-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
+    .group-title { font-weight: 700; font-size: 13px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
+    .group-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .group-table th {
+      color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 10px;
+      text-align: center; padding: 6px 8px;
+    }
+    .group-table th:first-child { text-align: left; }
+    .group-table td { text-align: center; padding: 6px 8px; border-top: 1px solid var(--border-subtle); }
+    .group-table .team-name { text-align: left; font-weight: 600; }
+    .group-table .pts-col { font-weight: 800; }
+
+    .round-block { margin-bottom: 24px; }
+    .round-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+    .ties-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .tie-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; }
+    .tie-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+    .tie-row.winner { font-weight: 800; color: var(--accent-green); }
+    .tie-score { font-weight: 800; }
+    .tie-legs { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-muted); }
   `],
 })
 export class LeagueComponent implements OnInit {
   tabs = signal(LEAGUE_TABS);
   seasons = signal<any[]>([]);
   standings = signal<any[]>([]);
+  bracket = signal<any>(null);
   loading = signal(false);
   selectedSeason: number | null = null;
   activeTab = 0;
+  private competitions: any[] = [];
 
   constructor(private api: ApiService) {}
 
@@ -146,11 +251,13 @@ export class LeagueComponent implements OnInit {
     this.activeTab = 0;
     this.api.getSeasonCompetitions(this.selectedSeason).subscribe({
       next: comps => {
+        this.competitions = comps;
         const types = new Set(comps.map(c => c.type));
         this.tabs.set(LEAGUE_TABS.filter(t => types.has(t.type)));
         this.loadStandings();
       },
       error: () => {
+        this.competitions = [];
         this.tabs.set(LEAGUE_TABS);
         this.loadStandings();
       },
@@ -159,11 +266,33 @@ export class LeagueComponent implements OnInit {
 
   onTabChange(idx: number) { this.activeTab = idx; this.loadStandings(); }
 
+  isCupType(type: string): boolean {
+    return CUP_TYPES.has(type);
+  }
+
+  phaseLabel(phase: string): string {
+    return PHASE_LABELS[phase] ?? phase;
+  }
+
   loadStandings() {
     const tabs = this.tabs();
-    if (!this.selectedSeason || !tabs.length) { this.standings.set([]); return; }
-    this.loading.set(true);
+    if (!this.selectedSeason || !tabs.length) { this.standings.set([]); this.bracket.set(null); return; }
     const compType = tabs[this.activeTab].type;
+
+    if (this.isCupType(compType)) {
+      this.standings.set([]);
+      const comp = this.competitions.find(c => c.type === compType);
+      if (!comp) { this.bracket.set(null); return; }
+      this.loading.set(true);
+      this.api.getCompetitionBracket(comp.id).subscribe({
+        next: data => { this.bracket.set(data); this.loading.set(false); },
+        error: () => { this.bracket.set(null); this.loading.set(false); },
+      });
+      return;
+    }
+
+    this.bracket.set(null);
+    this.loading.set(true);
     this.api.getSeasonStandings(this.selectedSeason, compType).subscribe({
       next: data => { this.standings.set(data); this.loading.set(false); },
       error: ()  => this.loading.set(false),
