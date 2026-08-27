@@ -311,6 +311,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/fanta-teams/${teamId}/lineage`);
   }
 
+  getTeamRosterHistory(teamId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/fanta-teams/${teamId}/roster-history`);
+  }
+
   linkTeamLineage(teamAId: number, teamBId: number, keepDistinctNames: boolean): Observable<any> {
     return this.http.post(`${this.base}/fanta-teams/link-lineage`, {
       team_a_id: teamAId, team_b_id: teamBId, keep_distinct_names: keepDistinctNames,

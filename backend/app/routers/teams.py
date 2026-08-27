@@ -309,6 +309,43 @@ def get_fanta_team(team_id: int, db: Session = Depends(get_db)):
     }
 
 
+@teams_router.get("/{team_id}/roster-history")
+def get_roster_history(team_id: int, db: Session = Depends(get_db)):
+    """Movimenti di mercato della stagione (acquisti/svincoli) raggruppati
+    per data — utile per distinguere la rosa iniziale (asta estiva) dai
+    cambi di un successivo mercato di riparazione."""
+    team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
+    if not team:
+        raise HTTPException(404, "Team not found")
+
+    rows = db.query(FantaRoster).filter(FantaRoster.fanta_team_id == team_id).all()
+    events: dict[str, dict] = {}
+
+    def _event(dt) -> dict:
+        key = dt.date().isoformat() if dt else "sconosciuta"
+        return events.setdefault(key, {"date": key, "acquired": [], "released": []})
+
+    for r in rows:
+        player_name = r.player.name if r.player else None
+        role = r.role or (r.player.role if r.player else None)
+        _event(r.acquired_at)["acquired"].append({
+            "player_id": r.player_id, "player_name": player_name, "role": role, "price": r.purchase_price,
+        })
+        if r.released_at:
+            _event(r.released_at)["released"].append({
+                "player_id": r.player_id, "player_name": player_name, "role": role, "refund": r.purchase_price,
+            })
+
+    result = sorted(events.values(), key=lambda e: e["date"])
+    for e in result:
+        credit_spent = sum(p["price"] for p in e["acquired"])
+        credit_refund = sum(p["refund"] for p in e["released"])
+        e["credit_spent"] = credit_spent
+        e["credit_refund"] = credit_refund
+        e["credit_delta"] = credit_refund - credit_spent
+    return result
+
+
 @teams_router.get("/{team_id}/lineage")
 def get_team_lineage(team_id: int, db: Session = Depends(get_db)):
     team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()

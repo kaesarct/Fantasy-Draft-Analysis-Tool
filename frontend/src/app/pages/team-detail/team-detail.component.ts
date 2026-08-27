@@ -72,6 +72,36 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
           </div>
         }
 
+        @if (rosterHistory().length) {
+          <div class="section-title">📅 Storico mercato</div>
+          <div class="card mb-4 history-list">
+            @for (ev of rosterHistory(); track ev.date) {
+              <div class="history-event">
+                <div class="history-header">
+                  <span class="history-date">{{ ev.date }}</span>
+                  <span class="text-muted">
+                    delta crediti: <strong [class.text-positive]="ev.credit_delta > 0" [class.text-negative]="ev.credit_delta < 0">{{ ev.credit_delta }}</strong>
+                  </span>
+                </div>
+                @for (p of ev.acquired; track p.player_id) {
+                  <div class="history-row acquired">
+                    <span class="role-badge role-{{ p.role }}">{{ p.role }}</span>
+                    <span>{{ p.player_name }}</span>
+                    <span class="text-muted">acquistato — {{ p.price }} FM</span>
+                  </div>
+                }
+                @for (p of ev.released; track p.player_id) {
+                  <div class="history-row released">
+                    <span class="role-badge role-{{ p.role }}">{{ p.role }}</span>
+                    <span>{{ p.player_name }}</span>
+                    <span class="text-muted">svincolato — rimborso {{ p.refund }} FM</span>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+
         <div class="section-title">📋 Rosa ({{ team().roster.length }})</div>
         <div class="card mb-4 roster-table">
           @for (p of team().roster; track p.player_id) {
@@ -136,11 +166,26 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
     }
     .roster-row:last-child { border-bottom: none; }
     .player-name { font-weight: 600; font-size: 13px; flex: 1; }
+
+    .history-list { padding: 0; }
+    .history-event { padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); }
+    .history-event:last-child { border-bottom: none; }
+    .history-header {
+      display: flex; align-items: center; justify-content: space-between;
+      font-weight: 700; font-size: 13px; margin-bottom: 8px;
+    }
+    .history-date { color: var(--text-secondary); }
+    .history-row {
+      display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px;
+    }
+    .history-row.acquired > span:nth-child(2) { color: var(--accent-green); }
+    .history-row.released > span:nth-child(2) { color: var(--text-muted); }
   `],
 })
 export class TeamDetailComponent implements OnInit {
   team = signal<any>(null);
   lineage = signal<any[]>([]);
+  rosterHistory = signal<any[]>([]);
   loading = signal(true);
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
@@ -155,6 +200,7 @@ export class TeamDetailComponent implements OnInit {
       this.loading.set(true);
       this.team.set(null);
       this.lineage.set([]);
+      this.rosterHistory.set([]);
       this.api.getFantaTeam(id).subscribe({
         next: t => {
           t.roster = [...t.roster].sort((a: any, b: any) =>
@@ -166,6 +212,7 @@ export class TeamDetailComponent implements OnInit {
         error: () => this.loading.set(false),
       });
       this.api.getTeamLineage(id).subscribe({ next: l => this.lineage.set(l) });
+      this.api.getTeamRosterHistory(id).subscribe({ next: h => this.rosterHistory.set(h) });
     });
   }
 }
