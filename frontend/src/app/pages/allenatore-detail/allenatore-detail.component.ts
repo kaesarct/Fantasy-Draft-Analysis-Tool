@@ -5,6 +5,8 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DropdownModule } from 'primeng/dropdown';
 import { ApiService } from '../../core/services/api.service';
 
+const ROLE_ORDER = ['P', 'D', 'C', 'A'];
+
 @Component({
   selector: 'app-allenatore-detail',
   standalone: true,
@@ -178,7 +180,10 @@ export class AllenatoreDetailComponent implements OnInit {
     this.loadingPlayers.set(true);
     this.api.getAllenatorePlayers(this.allenatoreId, this.selectedSeasonId ?? undefined).subscribe({
       next: p => {
-        this.players.set(p);
+        const sorted = [...p].sort((a: any, b: any) =>
+          ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || (a.player_name || '').localeCompare(b.player_name || '')
+        );
+        this.players.set(sorted);
         this.loadingPlayers.set(false);
       },
       error: () => this.loadingPlayers.set(false),

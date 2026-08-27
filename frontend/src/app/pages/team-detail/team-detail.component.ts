@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 
+const ROLE_ORDER = ['P', 'D', 'C', 'A'];
+
 @Component({
   selector: 'app-team-detail',
   standalone: true,
@@ -155,6 +157,9 @@ export class TeamDetailComponent implements OnInit {
       this.lineage.set([]);
       this.api.getFantaTeam(id).subscribe({
         next: t => {
+          t.roster = [...t.roster].sort((a: any, b: any) =>
+            ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.player_name.localeCompare(b.player_name)
+          );
           this.team.set(t);
           this.loading.set(false);
         },
