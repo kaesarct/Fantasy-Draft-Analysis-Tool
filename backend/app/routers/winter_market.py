@@ -128,22 +128,24 @@ def reconcile_winter_market(
         if not team:
             unmatched_teams.add(team_name)
             continue
+        row_role = str(row[role_col]).strip().upper() if role_col else None
+        if row_role not in _VALID_ROLES:
+            row_role = None
         player_id = _match_player_id(db, player_name)
         if not player_id and create_missing_players:
-            role = str(row[role_col]).strip().upper() if role_col else None
-            if role not in _VALID_ROLES:
+            if row_role is None:
                 unmatched_players.add(player_name)
                 continue
             display_name = player_name.title() if player_name.isupper() else player_name
-            new_player = Player(name=display_name, role=role)
+            new_player = Player(name=display_name, role=row_role)
             db.add(new_player)
             db.flush()
             player_id = new_player.id
-            created_players.append({"player_id": player_id, "player_name": display_name, "role": role})
+            created_players.append({"player_id": player_id, "player_name": display_name, "role": row_role})
         if not player_id:
             unmatched_players.add(player_name)
             continue
-        rows_by_team.setdefault(team.id, []).append((player_id, price))
+        rows_by_team.setdefault(team.id, []).append((player_id, price, row_role))
 
     market_dt = datetime.fromisoformat(market_date) if market_date else datetime.utcnow()
     players_by_id = {p.id: p for p in db.query(Player).all()}
@@ -161,22 +163,22 @@ def reconcile_winter_market(
             .all()
         )
         current_by_player = {r.player_id: r for r in current_rows}
-        new_player_ids = {pid for pid, _ in new_entries}
+        new_player_ids = {pid for pid, _, _ in new_entries}
 
         released = [r for pid, r in current_by_player.items() if pid not in new_player_ids]
-        added = [(pid, price) for pid, price in new_entries if pid not in current_by_player]
+        added = [(pid, price, role) for pid, price, role in new_entries if pid not in current_by_player]
 
         credit_refund = sum(r.purchase_price for r in released)
-        credit_spent = sum(price for _, price in added)
+        credit_spent = sum(price for _, price, _ in added)
 
         if not dry_run:
             for r in released:
                 r.is_active = False
                 r.released_at = market_dt
-            for pid, price in added:
+            for pid, price, role in added:
                 db.add(FantaRoster(
                     fanta_team_id=team_id, player_id=pid, season_id=season_id,
-                    purchase_price=price, acquired_at=market_dt,
+                    purchase_price=price, acquired_at=market_dt, role=role,
                 ))
             team.remaining_credits = (team.remaining_credits or 0.0) + credit_refund - credit_spent
             team.credits_spent = (team.credits_spent or 0.0) - credit_refund + credit_spent
@@ -190,7 +192,7 @@ def reconcile_winter_market(
             ],
             "added": [
                 {"player_id": pid, "player_name": players_by_id[pid].name, "price": price}
-                for pid, price in added
+                for pid, price, _ in added
             ],
             "credit_refund": credit_refund,
             "credit_spent": credit_spent,

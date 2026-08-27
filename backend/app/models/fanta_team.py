@@ -117,6 +117,11 @@ class FantaRoster(Base):
     is_active = Column(Boolean, default=True)        # False se ceduto/scambiato
     acquired_at = Column(DateTime, default=datetime.utcnow)
     released_at = Column(DateTime, nullable=True)
+    # Ruolo al momento dell'acquisto (da file storici che lo riportano per
+    # riga): un giocatore versatile puo' avere un ruolo diverso da quello
+    # "attuale" salvato su Player, che e' uno solo per tutta la carriera.
+    # Nullable: le righe create prima di questo campo non lo hanno.
+    role = Column(String(2), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("fanta_team_id", "player_id", "season_id", name="uq_roster"),

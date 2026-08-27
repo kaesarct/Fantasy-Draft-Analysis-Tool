@@ -44,6 +44,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_add_lineage_id()
     _migrate_add_trade_roster_ids()
+    _migrate_add_roster_role()
     _migrate_add_leghe_id()
     _migrate_widen_secondary_role()
     _migrate_widen_price_secondary_role()
@@ -82,6 +83,14 @@ def _migrate_add_trade_roster_ids():
         conn.execute(text(
             "ALTER TABLE trade_items ADD COLUMN IF NOT EXISTS new_roster_id "
             "INTEGER REFERENCES fanta_rosters(id)"
+        ))
+
+
+def _migrate_add_roster_role():
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE fanta_rosters ADD COLUMN IF NOT EXISTS role VARCHAR(2)"
         ))
 
 

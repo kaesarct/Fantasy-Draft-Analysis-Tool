@@ -301,7 +301,7 @@ def get_fanta_team(team_id: int, db: Session = Depends(get_db)):
             {
                 "player_id": r.player_id,
                 "player_name": r.player.name if r.player else None,
-                "role": r.player.role if r.player else None,
+                "role": r.role or (r.player.role if r.player else None),
                 "purchase_price": r.purchase_price,
             }
             for r in roster
