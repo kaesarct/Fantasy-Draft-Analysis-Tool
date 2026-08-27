@@ -154,18 +154,23 @@ export class AllenatoreDetailComponent implements OnInit {
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
   ngOnInit() {
-    this.allenatoreId = Number(this.route.snapshot.paramMap.get('id'));
-    if (!this.allenatoreId) {
-      this.loading.set(false);
-      return;
-    }
-    this.api.getAllenatore(this.allenatoreId).subscribe({
-      next: a => {
-        this.allenatore.set(a);
+    this.route.paramMap.subscribe(params => {
+      this.allenatoreId = Number(params.get('id'));
+      if (!this.allenatoreId) {
         this.loading.set(false);
-        this.loadPlayers();
-      },
-      error: () => this.loading.set(false),
+        return;
+      }
+      this.loading.set(true);
+      this.allenatore.set(null);
+      this.selectedSeasonId = null;
+      this.api.getAllenatore(this.allenatoreId).subscribe({
+        next: a => {
+          this.allenatore.set(a);
+          this.loading.set(false);
+          this.loadPlayers();
+        },
+        error: () => this.loading.set(false),
+      });
     });
   }
 

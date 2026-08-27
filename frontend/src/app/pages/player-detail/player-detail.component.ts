@@ -207,32 +207,38 @@ export class PlayerDetailComponent implements OnInit {
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
   ngOnInit() {
-    this.playerId = Number(this.route.snapshot.paramMap.get('id'));
+    this.route.paramMap.subscribe(params => {
+      this.playerId = Number(params.get('id'));
+      this.loading.set(true);
+      this.loadingSeasonHistory.set(true);
+      this.player.set(null);
+      this.seasonHistory.set([]);
 
-    this.api.getPlayer(this.playerId).subscribe({
-      next: player => {
-        this.player.set(player);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.player.set(null);
-        this.loading.set(false);
-      },
-    });
+      this.api.getPlayer(this.playerId).subscribe({
+        next: player => {
+          this.player.set(player);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.player.set(null);
+          this.loading.set(false);
+        },
+      });
 
-    this.api.getSeasons().subscribe(seasons => {
-      this.seasons.set(seasons);
-      const current = seasons.find((s: any) => s.is_current) ?? seasons[0];
-      this.selectedSeasonId = current?.id ?? null;
-      this.loadSeasonData();
-    });
+      this.api.getSeasons().subscribe(seasons => {
+        this.seasons.set(seasons);
+        const current = seasons.find((s: any) => s.is_current) ?? seasons[0];
+        this.selectedSeasonId = current?.id ?? null;
+        this.loadSeasonData();
+      });
 
-    this.api.getPlayerSeasonHistory(this.playerId).subscribe({
-      next: rows => {
-        this.seasonHistory.set(rows);
-        this.loadingSeasonHistory.set(false);
-      },
-      error: () => this.loadingSeasonHistory.set(false),
+      this.api.getPlayerSeasonHistory(this.playerId).subscribe({
+        next: rows => {
+          this.seasonHistory.set(rows);
+          this.loadingSeasonHistory.set(false);
+        },
+        error: () => this.loadingSeasonHistory.set(false),
+      });
     });
   }
 

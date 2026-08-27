@@ -144,18 +144,23 @@ export class TeamDetailComponent implements OnInit {
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
   ngOnInit() {
-    const id = Number(this.route.snapshot.paramMap.get('id'));
-    if (!id) {
-      this.loading.set(false);
-      return;
-    }
-    this.api.getFantaTeam(id).subscribe({
-      next: t => {
-        this.team.set(t);
+    this.route.paramMap.subscribe(params => {
+      const id = Number(params.get('id'));
+      if (!id) {
         this.loading.set(false);
-      },
-      error: () => this.loading.set(false),
+        return;
+      }
+      this.loading.set(true);
+      this.team.set(null);
+      this.lineage.set([]);
+      this.api.getFantaTeam(id).subscribe({
+        next: t => {
+          this.team.set(t);
+          this.loading.set(false);
+        },
+        error: () => this.loading.set(false),
+      });
+      this.api.getTeamLineage(id).subscribe({ next: l => this.lineage.set(l) });
     });
-    this.api.getTeamLineage(id).subscribe({ next: l => this.lineage.set(l) });
   }
 }
