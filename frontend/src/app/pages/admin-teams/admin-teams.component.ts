@@ -369,6 +369,18 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
                 (ngModelChange)="loadStandingsEditor()"
               />
             </label>
+            <p-dropdown
+              [options]="competitionTypeOptions"
+              [(ngModel)]="newCompetitionType"
+              placeholder="Tipo da abilitare"
+              styleClass="filter-drop"
+            />
+            <button
+              pButton label="Abilita competizione" size="small" class="p-button-outlined"
+              [disabled]="!newCompetitionType"
+              [loading]="creatingCompetition()"
+              (click)="createCompetition()"
+            ></button>
           </div>
           @if (selectedStandingsCompId) {
             <div class="standings-table">
@@ -513,6 +525,18 @@ export class AdminTeamsComponent implements OnInit {
   deletingTeamId = signal<number | null>(null);
   creatingTeam = signal(false);
   mergingTeams = signal(false);
+  creatingCompetition = signal(false);
+  newCompetitionType: string | null = null;
+  competitionTypeOptions = [
+    { label: 'Gold', value: 'GOLD' },
+    { label: 'Silver', value: 'SILVER' },
+    { label: 'Bronze', value: 'BRONZE' },
+    { label: 'Carbon', value: 'CARBON' },
+    { label: 'Ciempions', value: 'CIEMPIONS' },
+    { label: 'UEFA', value: 'UEFA' },
+    { label: 'Coppa Italia', value: 'COPPA_ITALIA' },
+    { label: 'Euro Cup', value: 'EURO_CUP' },
+  ];
   savingStandingId = signal<number | null>(null);
   message = signal('');
   messageIsError = signal(false);
@@ -640,6 +664,26 @@ export class AdminTeamsComponent implements OnInit {
   loadCompetitions() {
     if (!this.selectedSeasonId) return;
     this.api.getSeasonCompetitions(this.selectedSeasonId).subscribe({ next: d => this.competitions.set(d) });
+  }
+
+  createCompetition() {
+    if (!this.selectedSeasonId || !this.newCompetitionType) return;
+    this.creatingCompetition.set(true);
+    this.api.createCompetition(this.selectedSeasonId, this.newCompetitionType).subscribe({
+      next: comp => {
+        this.creatingCompetition.set(false);
+        this.newCompetitionType = null;
+        this.setMessage(`Competizione "${comp.name}" abilitata.`, false);
+        this.loadCompetitions();
+        this.loadLeagues();
+        this.selectedStandingsCompId = comp.id;
+        this.loadStandingsEditor();
+      },
+      error: err => {
+        this.creatingCompetition.set(false);
+        this.setMessage(err.error?.detail || 'Errore durante la creazione della competizione.', true);
+      },
+    });
   }
 
   allCompetitionOptions() {

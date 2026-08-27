@@ -96,6 +96,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/seasons/${seasonId}/leagues`);
   }
 
+  createCompetition(seasonId: number, type: string, name?: string): Observable<any> {
+    return this.http.post(`${this.base}/competitions`, { season_id: seasonId, type, name });
+  }
+
   getSeasonStandings(seasonId: number, compType?: string, matchDay?: number): Observable<any[]> {
     let params = new HttpParams();
     if (compType) params = params.set('comp_type', compType);

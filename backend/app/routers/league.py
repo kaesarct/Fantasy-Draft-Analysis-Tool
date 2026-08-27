@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
-from app.models.competition import Competition, CompetitionStanding, MatchResult, CompetitionGroup, CompetitionGroupTeam
+from app.models.competition import Competition, CompetitionStanding, CompetitionType, MatchResult, CompetitionGroup, CompetitionGroupTeam
 from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
 
@@ -52,6 +52,48 @@ def get_season_competitions(season_id: int, db: Session = Depends(get_db)):
         {"id": c.id, "name": c.name, "type": c.type, "is_active": c.is_active}
         for c in comps
     ]
+
+
+class CompetitionCreate(BaseModel):
+    season_id: int
+    type: str
+    name: str | None = None
+
+
+@competitions_router.post("", status_code=201)
+def create_competition(data: CompetitionCreate, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    season = db.query(Season).filter(Season.id == data.season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+    comp_type = data.type.upper()
+    if comp_type not in {t.value for t in CompetitionType}:
+        raise HTTPException(400, f"Tipo competizione non valido: {data.type}")
+
+    existing = db.query(Competition).filter(
+        Competition.season_id == data.season_id, Competition.type == comp_type
+    ).first()
+    if existing:
+        raise HTTPException(400, f"Esiste già una competizione {comp_type} per questa stagione")
+
+    # Gold/Bronze/Carbon hanno iscrizione automatica via League: se manca la
+    # lega di quel livello per la stagione, la creo insieme alla competizione
+    # (altrimenti la competizione risulterebbe senza nessuna squadra eleggibile).
+    if comp_type in MAIN_LEAGUE_TYPES:
+        league = db.query(League).filter(
+            League.season_id == data.season_id, League.level == comp_type
+        ).first()
+        if not league:
+            league = League(season_id=data.season_id, level=comp_type)
+            db.add(league)
+            db.flush()
+
+    comp = Competition(
+        season_id=data.season_id, type=comp_type,
+        name=data.name or f"{comp_type.capitalize()} {season.label}",
+    )
+    db.add(comp)
+    db.commit()
+    return {"id": comp.id, "name": comp.name, "type": comp.type, "is_active": comp.is_active}
 
 
 @seasons_router.get("/{season_id}/standings")
