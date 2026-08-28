@@ -14,6 +14,8 @@ const LEAGUE_TABS = [
   { label: '🥈 Silver', type: 'SILVER' },
   { label: '🏆 Ciempions', type: 'CIEMPIONS' },
   { label: '🌍 UEFA',   type: 'UEFA'   },
+  { label: '🇮🇹 Coppa Italia', type: 'COPPA_ITALIA' },
+  { label: '⭐ Eurocup', type: 'EURO_CUP' },
 ];
 
 const CUP_TYPES = new Set(['CIEMPIONS', 'UEFA', 'COPPA_ITALIA', 'EURO_CUP']);
