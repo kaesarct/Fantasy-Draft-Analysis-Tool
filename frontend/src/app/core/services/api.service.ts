@@ -94,6 +94,14 @@ export class ApiService {
     return this.http.patch(`${this.base}/seasons/${seasonId}/set-current`, null);
   }
 
+  getSeasonConclusionStatus(seasonId: number): Observable<{ ready: boolean; missing: string[] }> {
+    return this.http.get<{ ready: boolean; missing: string[] }>(`${this.base}/seasons/${seasonId}/conclusion-status`);
+  }
+
+  concludeSeason(seasonId: number): Observable<any> {
+    return this.http.post(`${this.base}/seasons/${seasonId}/conclude`, null);
+  }
+
   getSeasonCompetitions(seasonId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/seasons/${seasonId}/competitions`);
   }
@@ -323,6 +331,10 @@ export class ApiService {
     return this.http.post(`${this.base}/fanta-teams/link-lineage`, {
       team_a_id: teamAId, team_b_id: teamBId, keep_distinct_names: keepDistinctNames,
     });
+  }
+
+  unlinkTeamLineage(teamId: number): Observable<any> {
+    return this.http.delete(`${this.base}/fanta-teams/${teamId}/lineage`);
   }
 
   // ── Scambi ─────────────────────────────────────────────────

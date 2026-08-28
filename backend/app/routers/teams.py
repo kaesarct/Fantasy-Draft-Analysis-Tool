@@ -420,6 +420,26 @@ def link_team_lineage(
     return {"ok": True, "lineage_id": lineage.id}
 
 
+@teams_router.delete("/{team_id}/lineage")
+def unlink_team_lineage(team_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()
+    if not team:
+        raise HTTPException(404, "Team not found")
+    if team.lineage_id is None:
+        raise HTTPException(400, "Questa squadra non ha nessun collegamento storico da rimuovere")
+
+    lineage_id = team.lineage_id
+    team.lineage_id = None
+    db.flush()
+
+    remaining = db.query(FantaTeam).filter(FantaTeam.lineage_id == lineage_id).count()
+    if remaining == 0:
+        db.query(FantaTeamLineage).filter(FantaTeamLineage.id == lineage_id).delete()
+
+    db.commit()
+    return {"ok": True}
+
+
 @teams_router.post("/{team_id}/coaches", status_code=201)
 def assign_coach(team_id: int, data: CoachAssign, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     team = db.query(FantaTeam).filter(FantaTeam.id == team_id).first()

@@ -138,6 +138,40 @@ interface PendingMerge {
           Il campo "Giornata" è vuoto per default: se lo lasci vuoto viene usata la giornata rilevata automaticamente (mostrata sopra).
           A inizio stagione può risultare 0 (nessuna giornata ancora giocata): se una sincronizzazione fallisce, inseriscila qui a mano.
         </p>
+        <div class="sync-row">
+          <button
+            pButton
+            label="🏁 Stagione conclusa"
+            size="small"
+            class="p-button-outlined p-button-danger"
+            [disabled]="!conclusionReady() || concludingSeason()"
+            [loading]="concludingSeason()"
+            (click)="concludeSeason()"
+          ></button>
+          @if (concludingSeason()) {
+            <span class="text-muted" style="font-size:12px">Operazione in corso, può richiedere qualche minuto…</span>
+          } @else if (!conclusionReady() && conclusionMissing().length) {
+            <span class="text-muted" style="font-size:12px">In attesa della 38ª giornata per: {{ conclusionMissing().join(', ') }}</span>
+          } @else if (conclusionReady()) {
+            <span class="text-muted" style="font-size:12px">38ª giornata giocata per {{ currentSeasonLabel() }}: puoi chiudere la stagione.</span>
+          }
+        </div>
+        @if (conclusionReport(); as report) {
+          <div class="conclusion-report">
+            <div>✅ Stagione <strong>{{ report.new_season.label }}</strong> creata e impostata come corrente ({{ report.teams_created }} squadre copiate, {{ report.coaches_carried }} allenatori riportati).</div>
+            @for (kv of report.archive_import | keyvalue; track kv.key) {
+              <div [class.text-negative]="!$any(kv.value).ok">
+                Archivio {{ kv.key }}: {{ $any(kv.value).ok ? ('✅ ' + ($any(kv.value).rows ?? 0) + ' righe') : ('⚠️ ' + $any(kv.value).message) }}
+              </div>
+            }
+          </div>
+        }
+        <div class="sync-row">
+          <span class="text-muted" style="font-size:12px">Importa storico per la stagione selezionata sopra (anche se non corrente):</span>
+          <button pButton label="Statistiche" size="small" class="p-button-outlined" [disabled]="!syncSeasonId" [loading]="importingArchive() === 'stats'" (click)="importArchive('stats')"></button>
+          <button pButton label="Quotazioni" size="small" class="p-button-outlined" [disabled]="!syncSeasonId" [loading]="importingArchive() === 'prices'" (click)="importArchive('prices')"></button>
+          <button pButton label="Voti" size="small" class="p-button-outlined" [disabled]="!syncSeasonId" [loading]="importingArchive() === 'votes'" (click)="importArchive('votes')"></button>
+        </div>
       </div>
 
       <!-- Merge giocatori duplicati -->
@@ -350,6 +384,10 @@ interface PendingMerge {
     .sync-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .matchday-input { width: 170px; }
     .refresh-btn { background: none; border: none; cursor: pointer; padding: 0 0 0 4px; font-size: 12px; }
+    .conclusion-report {
+      padding: 10px 12px; border-radius: 8px; font-size: 12px;
+      background: var(--bg-subtle, rgba(255,255,255,.05)); display: flex; flex-direction: column; gap: 4px;
+    }
 
     .mb-4 { margin-bottom: 24px; }
 
@@ -405,6 +443,11 @@ export class AdminComponent implements OnInit {
   syncingPrices = signal(false);
   syncingVotes = signal(false);
   checkingRecovery = signal(false);
+  conclusionReady = signal(false);
+  conclusionMissing = signal<string[]>([]);
+  concludingSeason = signal(false);
+  conclusionReport = signal<any>(null);
+  importingArchive = signal<'stats' | 'prices' | 'votes' | null>(null);
   message = signal('');
   messageIsError = signal(false);
 
@@ -446,6 +489,71 @@ export class AdminComponent implements OnInit {
         if (!this.syncSeasonId && current) {
           this.syncSeasonId = current.id;
         }
+        this.loadConclusionStatus();
+      },
+    });
+  }
+
+  loadConclusionStatus() {
+    const seasonId = this.currentSeasonId();
+    if (!seasonId) {
+      this.conclusionReady.set(false);
+      this.conclusionMissing.set([]);
+      return;
+    }
+    this.api.getSeasonConclusionStatus(seasonId).subscribe({
+      next: res => {
+        this.conclusionReady.set(res.ready);
+        this.conclusionMissing.set(res.missing);
+      },
+      error: () => {
+        this.conclusionReady.set(false);
+        this.conclusionMissing.set([]);
+      },
+    });
+  }
+
+  concludeSeason() {
+    const seasonId = this.currentSeasonId();
+    if (!seasonId || !this.conclusionReady()) return;
+    const confirmed = confirm(
+      `Confermi la chiusura della stagione "${this.currentSeasonLabel()}"?\n\n` +
+      "Verrà creata la stagione successiva con le stesse squadre (crediti azzerati, rosa vuota) " +
+      "collegate a quelle attuali, impostata come corrente, e questa stagione verrà archiviata " +
+      "definitivamente nello Storico. Operazione non banale da annullare."
+    );
+    if (!confirmed) return;
+
+    this.concludingSeason.set(true);
+    this.conclusionReport.set(null);
+    this.api.concludeSeason(seasonId).subscribe({
+      next: res => {
+        this.concludingSeason.set(false);
+        this.conclusionReport.set(res);
+        this.setMessage(`Stagione "${res.new_season.label}" creata e impostata come corrente.`, false);
+        this.loadSeasons();
+      },
+      error: err => {
+        this.concludingSeason.set(false);
+        this.setMessage(err.error?.detail || 'Errore durante la chiusura della stagione.', true);
+      },
+    });
+  }
+
+  importArchive(dataType: 'stats' | 'prices' | 'votes') {
+    if (!this.syncSeasonId) return;
+    this.importingArchive.set(dataType);
+    this.api.importSeasonHistory(this.syncSeasonId, dataType, true).subscribe({
+      next: res => {
+        this.importingArchive.set(null);
+        this.setMessage(
+          res.imported ? `${dataType}: ${res.rows} righe importate.` : (res.message || 'Import completato.'),
+          !res.ok,
+        );
+      },
+      error: err => {
+        this.importingArchive.set(null);
+        this.setMessage(err.error?.detail || `Errore durante l'import ${dataType}.`, true);
       },
     });
   }

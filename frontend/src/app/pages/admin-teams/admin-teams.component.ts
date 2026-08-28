@@ -48,8 +48,17 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
         <div class="coach-list">
           @for (a of allenatori(); track a.id) {
             <div class="coach-chip" [class.inactive]="!a.is_active">
-              <span class="coach-name">{{ a.display_name }}</span>
+              <input pInputText class="coach-name-input" [(ngModel)]="a._editName" />
               <span class="text-muted">{{ '@' + a.username }}</span>
+              <button
+                pButton
+                size="small"
+                class="p-button-outlined"
+                label="Salva"
+                [disabled]="!a._editName?.trim() || a._editName === a.display_name"
+                [loading]="savingCoachId() === a.id"
+                (click)="renameCoach(a)"
+              ></button>
               <button class="chip-btn" (click)="toggleActive(a)" [title]="a.is_active ? 'Disattiva' : 'Riattiva'">
                 {{ a.is_active ? '🟢' : '⚪' }}
               </button>
@@ -137,6 +146,12 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
                   <span class="lineage-note text-muted" (click)="loadLineageNote(t)">
                     {{ lineageNotes()[t.id] ?? '🔗 stessa squadra in altre stagioni (clic per i nomi)' }}
                   </span>
+                  <button
+                    class="dismiss-btn"
+                    [disabled]="unlinkingTeamId() === t.id"
+                    title="Rimuovi il collegamento storico di questa squadra"
+                    (click)="unlinkLineage(t)"
+                  >✂️ rimuovi collegamento</button>
                 }
               </div>
               <div class="assign-controls">
@@ -433,6 +448,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
     }
     .coach-chip.inactive { opacity: 0.55; }
     .coach-name { font-weight: 600; }
+    .coach-name-input { width: 140px; font-weight: 600; }
 
     .filters-bar { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
     .filter-drop { min-width: 160px; }
@@ -448,6 +464,12 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
     .team-mgmt-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .team-name-input { min-width: 200px; }
     .lineage-note { font-size: 11px; cursor: pointer; text-decoration: underline dotted; }
+    .dismiss-btn {
+      background: none; border: none; cursor: pointer; color: var(--text-muted);
+      font-size: 11px; padding: 0; text-decoration: underline;
+    }
+    .dismiss-btn:hover { color: var(--text-negative, #e05260); }
+    .dismiss-btn:disabled { cursor: not-allowed; opacity: 0.5; text-decoration: none; }
     .coaches { display: flex; flex-wrap: wrap; gap: 6px; }
     .assigned-chip {
       display: inline-flex; align-items: center; gap: 4px;
@@ -521,8 +543,10 @@ export class AdminTeamsComponent implements OnInit {
   lineageNotes = signal<Record<number, string | undefined>>({});
 
   creating = signal(false);
+  savingCoachId = signal<number | null>(null);
   savingTeamId = signal<number | null>(null);
   deletingTeamId = signal<number | null>(null);
+  unlinkingTeamId = signal<number | null>(null);
   creatingTeam = signal(false);
   mergingTeams = signal(false);
   creatingCompetition = signal(false);
@@ -589,6 +613,27 @@ export class AdminTeamsComponent implements OnInit {
     });
   }
 
+  unlinkLineage(team: any) {
+    const confirmed = confirm(`Rimuovere il collegamento storico di "${team.name}" con le altre stagioni?`);
+    if (!confirmed) return;
+    this.unlinkingTeamId.set(team.id);
+    this.api.unlinkTeamLineage(team.id).subscribe({
+      next: () => {
+        this.unlinkingTeamId.set(null);
+        this.setMessage(`Collegamento storico di "${team.name}" rimosso.`, false);
+        this.lineageNotes.update(notes => {
+          const { [team.id]: _removed, ...rest } = notes;
+          return rest;
+        });
+        this.loadTeams();
+      },
+      error: err => {
+        this.unlinkingTeamId.set(null);
+        this.setMessage(err.error?.detail || 'Errore durante la rimozione del collegamento.', true);
+      },
+    });
+  }
+
   linkLineage(pair: { a: any; b: any }, keepDistinctNames: boolean) {
     this.mergingTeams.set(true);
     this.api.linkTeamLineage(pair.a.id, pair.b.id, keepDistinctNames).subscribe({
@@ -631,7 +676,26 @@ export class AdminTeamsComponent implements OnInit {
   }
 
   loadAllenatori() {
-    this.api.getAllenatori().subscribe({ next: d => this.allenatori.set(d) });
+    this.api.getAllenatori().subscribe({
+      next: d => this.allenatori.set(d.map(a => ({ ...a, _editName: a.display_name }))),
+    });
+  }
+
+  renameCoach(a: any) {
+    const name = a._editName?.trim();
+    if (!name || name === a.display_name) return;
+    this.savingCoachId.set(a.id);
+    this.api.updateAllenatore(a.id, { display_name: name }).subscribe({
+      next: () => {
+        this.savingCoachId.set(null);
+        this.setMessage(`Allenatore rinominato in "${name}".`, false);
+        this.loadAllenatori();
+      },
+      error: err => {
+        this.savingCoachId.set(null);
+        this.setMessage(err.error?.detail || 'Errore durante la rinomina.', true);
+      },
+    });
   }
 
   loadTeams() {

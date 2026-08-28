@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
 from app.models.competition import Competition, CompetitionStanding, CompetitionType, MatchResult, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase
-from app.models.fanta_team import FantaTeam, League
+from app.models.fanta_team import FantaTeam, League, FantaTeamLineage, FantaTeamCoach
 from app.services.auth_service import require_admin
+from app.services.season_import import import_season_data, import_season_votes
 
 router = APIRouter(tags=["league"])
 
@@ -39,6 +40,121 @@ def set_current_season(season_id: int, db: Session = Depends(get_db), _admin: st
     return {"ok": True, "id": season.id, "label": season.label}
 
 
+def _matchday_38_played(db: Session, season_id: int) -> list[str]:
+    """Livelli GOLD/BRONZE/CARBON della stagione senza risultati sincronizzati
+    per la 38a giornata (quindi con la stagione ancora da considerare in corso)."""
+    missing = []
+    for level in sorted(MAIN_LEAGUE_TYPES):
+        comp = db.query(Competition).filter(
+            Competition.season_id == season_id, Competition.type == level
+        ).first()
+        if not comp:
+            missing.append(level)
+            continue
+        has_matchday_38 = db.query(MatchResult).filter(
+            MatchResult.competition_id == comp.id, MatchResult.match_day == 38
+        ).first()
+        if not has_matchday_38:
+            missing.append(level)
+    return missing
+
+
+@seasons_router.get("/{season_id}/conclusion-status")
+def get_season_conclusion_status(season_id: int, db: Session = Depends(get_db)):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+    missing = _matchday_38_played(db, season_id)
+    return {"ready": not missing, "missing": missing}
+
+
+@seasons_router.post("/{season_id}/conclude")
+def conclude_season(season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    """Chiude la stagione indicata: crea la stagione successiva con le stesse
+    squadre/allenatori (crediti azzerati, rosa vuota), la imposta come
+    corrente, e archivia definitivamente voti/statistiche/quotazioni della
+    stagione chiusa nello Storico."""
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+
+    missing = _matchday_38_played(db, season_id)
+    if missing:
+        raise HTTPException(400, f"38a giornata non ancora giocata per: {', '.join(missing)}")
+
+    next_label = f"{season.year_start + 1}-{str(season.year_end + 1)[2:]}"
+    if db.query(Season).filter(Season.label == next_label).first():
+        raise HTTPException(400, f"Esiste già una stagione con label {next_label}")
+
+    new_season = Season(label=next_label, year_start=season.year_start + 1, year_end=season.year_end + 1)
+    db.add(new_season)
+    db.flush()
+
+    leagues_created = []
+    league_by_level: dict[str, League] = {}
+    for old_league in db.query(League).filter(League.season_id == season_id):
+        level = old_league.level.value if hasattr(old_league.level, "value") else old_league.level
+        if level not in MAIN_LEAGUE_TYPES:
+            continue
+        _ensure_league_and_competition(db, new_season, level)
+        new_league = db.query(League).filter(
+            League.season_id == new_season.id, League.level == level
+        ).first()
+        league_by_level[level] = new_league
+        leagues_created.append(level)
+
+    teams_created = 0
+    coaches_carried = 0
+    for old_team in db.query(FantaTeam).filter(FantaTeam.season_id == season_id):
+        old_league = db.query(League).filter(League.id == old_team.league_id).first()
+        old_level = old_league.level.value if hasattr(old_league.level, "value") else old_league.level
+        new_league = league_by_level.get(old_level)
+        if not new_league:
+            continue  # squadra di una lega non-principale (non dovrebbe capitare)
+
+        if old_team.lineage_id:
+            lineage_id = old_team.lineage_id
+        else:
+            lineage = FantaTeamLineage()
+            db.add(lineage)
+            db.flush()
+            lineage_id = lineage.id
+            old_team.lineage_id = lineage_id
+
+        new_team = FantaTeam(name=old_team.name, season_id=new_season.id, league_id=new_league.id, lineage_id=lineage_id)
+        db.add(new_team)
+        db.flush()
+        teams_created += 1
+
+        for coach_link in db.query(FantaTeamCoach).filter(FantaTeamCoach.fanta_team_id == old_team.id):
+            db.add(FantaTeamCoach(fanta_team_id=new_team.id, allenatore_id=coach_link.allenatore_id, is_primary=coach_link.is_primary))
+            coaches_carried += 1
+
+    db.query(Season).filter(Season.is_current == True).update({"is_current": False})
+    new_season.is_current = True
+    db.commit()
+
+    archive_import = {}
+    for data_type in ("stats", "prices"):
+        try:
+            archive_import[data_type] = import_season_data(db, season_id, data_type, force=True)
+        except Exception as exc:  # best-effort: non deve invalidare la nuova stagione già creata
+            archive_import[data_type] = {"ok": False, "message": str(exc)}
+    try:
+        archive_import["votes"] = import_season_votes(db, season_id, force=True)
+    except Exception as exc:
+        archive_import["votes"] = {"ok": False, "message": str(exc)}
+
+    return {
+        "ok": True,
+        "new_season": {"id": new_season.id, "label": new_season.label},
+        "leagues_created": leagues_created,
+        "teams_created": teams_created,
+        "coaches_carried": coaches_carried,
+        "archive_import": archive_import,
+    }
+
+
 @seasons_router.get("/{season_id}/leagues")
 def get_season_leagues(season_id: int, db: Session = Depends(get_db)):
     leagues = db.query(League).filter(League.season_id == season_id).all()
@@ -60,6 +176,36 @@ class CompetitionCreate(BaseModel):
     name: str | None = None
 
 
+def _ensure_league_and_competition(db: Session, season: Season, comp_type: str, name: str | None = None) -> Competition:
+    """Crea la Competition (e, per Gold/Bronze/Carbon, la League se manca)
+    per una stagione. Non fa il commit: chi chiama decide la transazione."""
+    existing = db.query(Competition).filter(
+        Competition.season_id == season.id, Competition.type == comp_type
+    ).first()
+    if existing:
+        return existing
+
+    # Gold/Bronze/Carbon hanno iscrizione automatica via League: se manca la
+    # lega di quel livello per la stagione, la creo insieme alla competizione
+    # (altrimenti la competizione risulterebbe senza nessuna squadra eleggibile).
+    if comp_type in MAIN_LEAGUE_TYPES:
+        league = db.query(League).filter(
+            League.season_id == season.id, League.level == comp_type
+        ).first()
+        if not league:
+            league = League(season_id=season.id, level=comp_type)
+            db.add(league)
+            db.flush()
+
+    comp = Competition(
+        season_id=season.id, type=comp_type,
+        name=name or f"{comp_type.capitalize()} {season.label}",
+    )
+    db.add(comp)
+    db.flush()
+    return comp
+
+
 @competitions_router.post("", status_code=201)
 def create_competition(data: CompetitionCreate, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     season = db.query(Season).filter(Season.id == data.season_id).first()
@@ -75,23 +221,7 @@ def create_competition(data: CompetitionCreate, db: Session = Depends(get_db), _
     if existing:
         raise HTTPException(400, f"Esiste già una competizione {comp_type} per questa stagione")
 
-    # Gold/Bronze/Carbon hanno iscrizione automatica via League: se manca la
-    # lega di quel livello per la stagione, la creo insieme alla competizione
-    # (altrimenti la competizione risulterebbe senza nessuna squadra eleggibile).
-    if comp_type in MAIN_LEAGUE_TYPES:
-        league = db.query(League).filter(
-            League.season_id == data.season_id, League.level == comp_type
-        ).first()
-        if not league:
-            league = League(season_id=data.season_id, level=comp_type)
-            db.add(league)
-            db.flush()
-
-    comp = Competition(
-        season_id=data.season_id, type=comp_type,
-        name=data.name or f"{comp_type.capitalize()} {season.label}",
-    )
-    db.add(comp)
+    comp = _ensure_league_and_competition(db, season, comp_type, data.name)
     db.commit()
     return {"id": comp.id, "name": comp.name, "type": comp.type, "is_active": comp.is_active}
 
