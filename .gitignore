@@ -11,3 +11,5 @@ backend/uploads/
 backend/session/*.json
 .env.bak.*
 backups/
+.last_deployed_commit
+deploy/deploy.log

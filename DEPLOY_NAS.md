@@ -231,6 +231,63 @@ docker compose -f docker-compose.prod.yml exec db \
   pg_dump -U ft_user ft_platform > backup_$(date +%Y%m%d).sql
 ```
 
+## 8. Deploy automatico su tag (opzionale)
+
+Invece di collegarti via SSH a ogni aggiornamento, puoi far controllare al NAS
+da solo se c'è un nuovo tag Git e, se sì, fare da solo `git pull` + rebuild.
+Nessuna porta aggiuntiva esposta verso internet: è il NAS a interrogare
+GitHub (connessione in uscita, già permessa), non il contrario — niente
+webhook da ricevere.
+
+**Come funziona**: `deploy/auto_deploy.sh` confronta il commit puntato
+dall'ultimo tag creato con l'ultimo commit già deployato (tracciato per SHA
+in `.last_deployed_commit`, un file locale al NAS, mai versionato). Se sono
+diversi: `git checkout` sul tag, `docker compose up -d --build`, e solo se
+va a buon fine aggiorna il marker. In caso di errore il marker non si
+aggiorna, quindi il tag "fallito" viene ritentato al giro successivo. Tutto
+viene loggato in `deploy/deploy.log` (anch'esso non versionato).
+
+> ⚠️ Da questo momento il repository sul NAS va trattato come **sola
+> destinazione di deploy**: lo script fa `git checkout --force` su un tag,
+> quindi eventuali modifiche fatte a mano dentro quella cartella verrebbero
+> perse al giro successivo. Sviluppa sempre sul PC, mai direttamente sul NAS.
+
+### Sul PC: taggare una release
+
+Quando una serie di commit è pronta per andare in produzione:
+
+```bash
+git tag -f deploy
+git push origin deploy --force
+```
+
+(`-f`/`--force` perché `deploy` è un tag "mobile": lo sposti sull'ultimo
+commit pronto invece di crearne uno nuovo ogni volta — lo script rileva il
+cambiamento dal commit puntato, non dal nome del tag, quindi funziona anche
+così). Se preferisci invece un tag diverso per ogni release (es. `v1.3.0`),
+va bene lo stesso: lo script prende sempre il tag più recente per data di
+creazione.
+
+### Sul NAS: pianificare lo script
+
+**Pannello di controllo → Utente e servizio → Pianificazione attività →
+Crea → Attività attivata → Script definito dall'utente**:
+
+- Utente: **root** (evita di dover gestire `sudo` in un contesto non
+  interattivo, dove non può chiedere la password)
+- Pianificazione: ricorrente, ogni 15-30 minuti va bene per un uso casalingo
+- Impostazioni attività → Comando:
+  ```bash
+  bash /volume1/KaesarNas/ft-platform/deploy/auto_deploy.sh
+  ```
+
+Al primo giro utile dopo aver pushato il tag `deploy`, l'attività fa il
+deploy da sola. Controlla l'esito con:
+
+```bash
+cat /volume1/KaesarNas/ft-platform/deploy/deploy.log
+```
+
 ## Differenze tra `docker-compose.yml` e `docker-compose.prod.yml`
 
 | | `docker-compose.yml` (dev, PC) | `docker-compose.prod.yml` (NAS) |
