@@ -140,7 +140,43 @@ scp backend/.env <utente>@tuonome.synology.me:~/ft-platform/backend/.env
 scp .env <utente>@tuonome.synology.me:~/ft-platform/.env
 ```
 
-## 5. Primo avvio
+## 5. Portare i dati esistenti (se non parti da zero)
+
+Se sul NAS deve arrivare lo storico/i dati già presenti sul PC (stagioni
+importate, rose, infortuni, ecc.) e non un database vuoto, il dump va
+caricato **prima** che il backend crei le tabelle — `Base.metadata.
+create_all()` le crea vuote al primo avvio, e un ripristino successivo
+fallirebbe sulle istruzioni `CREATE TABLE` (tabelle già esistenti).
+
+Sul PC, dump completo del database attuale:
+
+```bash
+docker compose exec db pg_dump -U ft_user -d ft_platform --no-owner --no-privileges > backup.sql
+```
+
+Copia `backup.sql` sul NAS (mai via Git):
+
+```bash
+scp backup.sql <utente>@tuonome.synology.me:~/ft-platform/backup.sql
+```
+
+Sul NAS, avvia **solo** il database (non ancora backend/frontend) e
+ripristina il dump nel database ancora vuoto:
+
+```bash
+cd ft-platform
+docker compose -f docker-compose.prod.yml up -d db
+docker compose -f docker-compose.prod.yml ps   # attendi "healthy"
+cat backup.sql | docker compose -f docker-compose.prod.yml exec -T db \
+  psql -U <DB_USER> -d <DB_NAME>
+```
+
+Usa lo stesso `DB_USER`/`DB_NAME` che hai messo nel `.env` del NAS (passo
+4). Solo dopo il ripristino avvia il resto dello stack (passo 6):
+`create_all()` troverà le tabelle già popolate e non le toccherà (crea
+solo quelle mancanti, mai distruttivo su quelle esistenti).
+
+## 6. Primo avvio
 
 Via SSH sul NAS, dalla cartella del progetto:
 
@@ -156,7 +192,7 @@ Crea**, indicando `docker-compose.prod.yml` come file compose.
 Verifica che l'app sia raggiungibile su `https://tuonome.synology.me` e che
 `https://tuonome.synology.me/api/health` risponda `{"status": "ok", ...}`.
 
-## 6. Aggiornamenti futuri
+## 7. Aggiornamenti futuri
 
 Workflow ordinario una volta che tutto è deployato:
 

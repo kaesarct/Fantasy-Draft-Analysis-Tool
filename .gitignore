@@ -10,3 +10,4 @@ backend/downloads/
 backend/uploads/
 backend/session/*.json
 .env.bak.*
+backups/
