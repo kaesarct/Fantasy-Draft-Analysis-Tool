@@ -43,6 +43,7 @@ def init_db():
     )
     Base.metadata.create_all(bind=engine)
     _migrate_add_lineage_id()
+    _migrate_add_season_disclaimer()
     _migrate_add_trade_roster_ids()
     _migrate_add_roster_role()
     _migrate_add_leghe_id()
@@ -68,6 +69,14 @@ def _migrate_add_lineage_id():
         conn.execute(text(
             "ALTER TABLE fanta_teams ADD COLUMN IF NOT EXISTS lineage_id "
             "INTEGER REFERENCES fanta_team_lineages(id)"
+        ))
+
+
+def _migrate_add_season_disclaimer():
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE seasons ADD COLUMN IF NOT EXISTS disclaimer TEXT"
         ))
 
 

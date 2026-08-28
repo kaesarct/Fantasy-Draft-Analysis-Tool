@@ -23,7 +23,7 @@ def list_seasons(db: Session = Depends(get_db)):
     seasons = db.query(Season).order_by(Season.year_start.desc()).all()
     return [
         {"id": s.id, "label": s.label, "year_start": s.year_start,
-         "year_end": s.year_end, "is_current": s.is_current}
+         "year_end": s.year_end, "is_current": s.is_current, "disclaimer": s.disclaimer}
         for s in seasons
     ]
 

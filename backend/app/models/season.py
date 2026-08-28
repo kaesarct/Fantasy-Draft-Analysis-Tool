@@ -1,5 +1,5 @@
 """Season model."""
-from sqlalchemy import Column, Integer, String, Date, Boolean
+from sqlalchemy import Column, Integer, String, Date, Boolean, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -14,6 +14,9 @@ class Season(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     is_current = Column(Boolean, default=False)
+    # Avviso mostrato nelle pagine classifica/coppe di questa stagione
+    # (es. stagione interrotta/alterata dal Covid, premi annullati).
+    disclaimer = Column(Text, nullable=True)
 
     leagues = relationship("League", back_populates="season")
     fanta_teams = relationship("FantaTeam", back_populates="season")

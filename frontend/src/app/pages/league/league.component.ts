@@ -47,6 +47,10 @@ const PHASE_LABELS: Record<string, string> = {
         />
       </div>
 
+      @if (seasonDisclaimer()) {
+        <div class="season-disclaimer">⚠️ {{ seasonDisclaimer() }}</div>
+      }
+
       <p-tabView [(activeIndex)]="activeTab" (activeIndexChange)="onTabChange($event)">
         @for (tab of tabs(); track tab.type) {
           <p-tabPanel [header]="tab.label">
@@ -175,6 +179,12 @@ const PHASE_LABELS: Record<string, string> = {
     .page-title  { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
     .season-drop { min-width: 140px; }
 
+    .season-disclaimer {
+      background: rgba(240, 136, 62, .12); border: 1px solid var(--accent-orange);
+      color: var(--accent-orange); border-radius: 8px; padding: 10px 14px;
+      font-size: 13px; font-weight: 600; margin-bottom: 16px;
+    }
+
     :host ::ng-deep .p-tabview-panels { padding: 0; margin-top: 16px; }
     :host ::ng-deep .standing-table .p-datatable-thead th {
       background: var(--bg-elevated);
@@ -231,6 +241,7 @@ export class LeagueComponent implements OnInit {
   loading = signal(false);
   selectedSeason: number | null = null;
   activeTab = 0;
+  seasonDisclaimer = signal<string | null>(null);
   private competitions: any[] = [];
 
   constructor(private api: ApiService) {}
@@ -249,6 +260,8 @@ export class LeagueComponent implements OnInit {
   onSeasonChange() {
     if (!this.selectedSeason) return;
     this.activeTab = 0;
+    const season = this.seasons().find(s => s.id === this.selectedSeason);
+    this.seasonDisclaimer.set(season?.disclaimer ?? null);
     this.api.getSeasonCompetitions(this.selectedSeason).subscribe({
       next: comps => {
         this.competitions = comps;
