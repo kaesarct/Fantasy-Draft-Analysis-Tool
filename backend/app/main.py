@@ -122,4 +122,4 @@ app.include_router(player_stats_archive.router, prefix=API_PREFIX)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": settings.app_version}

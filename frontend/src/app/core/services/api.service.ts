@@ -9,6 +9,10 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
+  getHealth(): Observable<{ status: string; version: string }> {
+    return this.http.get<{ status: string; version: string }>(`${this.base}/health`);
+  }
+
   // ── Players ────────────────────────────────────────────────
   getPlayers(search?: string, role?: string, teamId?: number, seasonId?: number): Observable<any[]> {
     let params = new HttpParams();

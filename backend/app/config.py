@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     fanta_app_key_fallback: str = "ICiELOObd5DF5uJEATi77CRvHiiRuMU0"
 
     # App
+    # Tag Git realmente deployato (passato da docker-compose come APP_VERSION,
+    # vedi deploy/auto_deploy.sh) — "dev" quando gira in locale senza tag.
+    app_version: str = "dev"
     debug: bool = False
     log_level: str = "INFO"
     download_folder: str = "./downloads/"

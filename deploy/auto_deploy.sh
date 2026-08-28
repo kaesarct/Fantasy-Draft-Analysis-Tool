@@ -50,6 +50,7 @@ log "Nuovo tag rilevato: $LATEST_TAG ($LATEST_SHA) — avvio deploy"
 
 git checkout --force "$LATEST_TAG" >> "$LOG_FILE" 2>&1
 
+export APP_VERSION="$LATEST_TAG"
 if docker compose -f "$COMPOSE_FILE" up -d --build >> "$LOG_FILE" 2>&1; then
   echo "$LATEST_SHA" > "$MARKER_FILE"
   log "Deploy completato: $LATEST_TAG"

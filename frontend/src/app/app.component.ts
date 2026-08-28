@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { AuthService } from './core/services/auth.service';
+import { ApiService } from './core/services/api.service';
 
 interface NavItem {
   label: string;
@@ -47,7 +48,7 @@ interface NavItem {
           } @else {
             <a class="nav-link auth-link" routerLink="/login">🔒 Accedi</a>
           }
-          <div class="sidebar-version">v1.0.0</div>
+          <div class="sidebar-version">{{ version() }}</div>
         </div>
       </nav>
 
@@ -185,10 +186,16 @@ export class AppComponent implements OnInit {
     { label: 'Mercato',     route: '/admin/mercato', icon: '🔄' },
   ];
 
-  constructor(public auth: AuthService) {}
+  version = signal('…');
+
+  constructor(public auth: AuthService, private api: ApiService) {}
 
   ngOnInit() {
     this.auth.checkAuth();
+    this.api.getHealth().subscribe({
+      next: res => this.version.set(res.version),
+      error: () => this.version.set('dev'),
+    });
   }
 
   visibleNavItems(): NavItem[] {
