@@ -6,8 +6,10 @@ from app.database import get_db
 from app.models.season import Season
 from app.models.competition import Competition, CompetitionStanding, CompetitionType, MatchResult, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase
 from app.models.fanta_team import FantaTeam, League, FantaTeamLineage, FantaTeamCoach
+from app.models.injury import InjuryPlayer, InjuryArchive
 from app.services.auth_service import require_admin
 from app.services.season_import import import_season_data, import_season_votes
+from app.routers.injuries import build_injuries_csv
 
 router = APIRouter(tags=["league"])
 
@@ -134,6 +136,16 @@ def conclude_season(season_id: int, db: Session = Depends(get_db), _admin: str =
     new_season.is_current = True
     db.commit()
 
+    csv_content, injuries_row_count = build_injuries_csv(db, season_id)
+    existing_archive = db.query(InjuryArchive).filter(InjuryArchive.season_id == season_id).first()
+    if existing_archive:
+        existing_archive.csv_content = csv_content
+        existing_archive.row_count = injuries_row_count
+    else:
+        db.add(InjuryArchive(season_id=season_id, csv_content=csv_content, row_count=injuries_row_count))
+    db.query(InjuryPlayer).filter(InjuryPlayer.season_id == season_id).delete()
+    db.commit()
+
     archive_import = {}
     for data_type in ("stats", "prices"):
         try:
@@ -151,6 +163,7 @@ def conclude_season(season_id: int, db: Session = Depends(get_db), _admin: str =
         "leagues_created": leagues_created,
         "teams_created": teams_created,
         "coaches_carried": coaches_carried,
+        "injuries_archived": {"row_count": injuries_row_count},
         "archive_import": archive_import,
     }
 

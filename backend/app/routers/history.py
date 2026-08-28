@@ -1,16 +1,57 @@
 """History router — import e consultazione dati storici di stagione."""
+import csv
+import io
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.season_data import PlayerSeasonVote
+from app.models.player import Player, PlayerArchiveSeasonStat
+from app.models.season_data import PlayerSeasonStat, PlayerSeasonVote
 from app.services.auth_service import require_admin
 from app.services.season_import import (
     DATA_TYPE_CONFIG, VOTES_COLUMNS, build_csv, build_votes_csv, import_season_data, import_season_votes,
 )
 
 router = APIRouter(prefix="/history", tags=["history"])
+
+# Colonne del tab "Statistiche" (STATS_COLUMNS in history.component.ts) — riusate
+# tali e quali per le stagioni 2006-07..2014-15, dove il dato viene dall'archivio
+# pianetafanta (PlayerArchiveSeasonStat) invece che dall'export fantacalcio.it.
+_ARCHIVE_STATS_FIELDS = [
+    "fanta_player_id", "player_name", "role", "team", "matches_played",
+    "average_vote", "fantasy_average", "goals_scored", "assists",
+    "yellow_cards", "red_cards",
+]
+
+
+def _query_archive_stats(db: Session, season_id: int, search: str | None = None) -> list[dict]:
+    """Fallback per le stagioni pre-2015: l'export fantacalcio.it (PlayerSeasonStat)
+    non le copre, ma l'archivio pianetafanta (PlayerArchiveSeasonStat) sì — solo
+    voti/statistiche, mai quotazioni (quella tabella non ha colonne prezzo)."""
+    q = (
+        db.query(PlayerArchiveSeasonStat, Player.name)
+        .join(Player, Player.id == PlayerArchiveSeasonStat.player_id)
+        .filter(PlayerArchiveSeasonStat.season_id == season_id)
+    )
+    if search:
+        q = q.filter(Player.name.ilike(f"%{search}%"))
+    return [
+        {
+            "fanta_player_id": stat.player_id,
+            "player_name": name,
+            "role": stat.role,
+            "team": stat.team_name,
+            "matches_played": stat.presences,
+            "average_vote": stat.vote_fantacalcio,
+            "fantasy_average": None,
+            "goals_scored": stat.goals_scored,
+            "assists": stat.assists,
+            "yellow_cards": stat.yellow_cards,
+            "red_cards": stat.red_cards,
+        }
+        for stat, name in q.order_by(Player.name).all()
+    ]
 
 
 def _validate_data_type(data_type: str) -> str:
@@ -78,7 +119,8 @@ def get_season_stats(
     search: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _query_season_rows(db, season_id, "stats", search)
+    rows = _query_season_rows(db, season_id, "stats", search)
+    return rows if rows else _query_archive_stats(db, season_id, search)
 
 
 @router.get("/seasons/{season_id}/prices")
@@ -109,7 +151,18 @@ def download_season_csv(
     data_type: str,
     db: Session = Depends(get_db),
 ):
-    buffer = build_csv(db, season_id, _validate_data_type(data_type))
+    data_type = _validate_data_type(data_type)
+    has_export_data = db.query(PlayerSeasonStat.id).filter(PlayerSeasonStat.season_id == season_id).first()
+    if data_type == "stats" and not has_export_data:
+        rows = _query_archive_stats(db, season_id)
+        text_buffer = io.StringIO()
+        writer = csv.DictWriter(text_buffer, fieldnames=_ARCHIVE_STATS_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+        buffer = io.BytesIO(text_buffer.getvalue().encode("utf-8"))
+        buffer.seek(0)
+    else:
+        buffer = build_csv(db, season_id, data_type)
     filename = f"{data_type}_season_{season_id}.csv"
     return StreamingResponse(
         buffer,

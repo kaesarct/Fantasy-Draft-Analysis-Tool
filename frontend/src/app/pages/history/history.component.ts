@@ -31,6 +31,11 @@ const PRICES_COLUMNS = [
   { field: 'fvm', label: 'FVM' },
 ];
 
+// L'import da pianetafanta copre solo 2006-07..2014-15 (fatto storico chiuso,
+// non un confine che si sposta come la stagione corrente) — vedi
+// backend/app/routers/history.py::_query_archive_stats.
+const ARCHIVE_ONLY_MAX_YEAR_START = 2014;
+
 const VOTES_COLUMNS = [
   { field: 'match_day', label: 'G' },
   { field: 'player_name', label: 'Giocatore' },
@@ -140,7 +145,13 @@ const VOTES_COLUMNS = [
           }
           @empty {
             <p class="text-muted" style="padding:20px;">
-              Nessun dato per questa stagione. Usa "Importa da Fantacalcio" per scaricarli.
+              @if (selectedSeasonId === currentSeasonId()) {
+                Nessun dato per questa stagione. Usa "Importa da Fantacalcio" per scaricarli.
+              } @else if (isArchiveOnlySeason() && dataType !== 'stats') {
+                {{ dataType === 'prices' ? 'Le quotazioni' : 'I voti per giornata' }} non sono disponibili per questa stagione storica: è disponibile solo la scheda Statistiche.
+              } @else {
+                Nessun dato per questa stagione.
+              }
             </p>
           }
         </div>
@@ -210,7 +221,7 @@ export class HistoryComponent implements OnInit {
   ngOnInit() {
     this.api.getSeasons().subscribe({
       next: seasons => {
-        this.seasonOptions.set(seasons.map(s => ({ label: s.label, value: s.id })));
+        this.seasonOptions.set(seasons.map(s => ({ label: s.label, value: s.id, year_start: s.year_start })));
         const current = seasons.find(s => s.is_current);
         this.currentSeasonId.set(current ? current.id : null);
       },
@@ -236,6 +247,11 @@ export class HistoryComponent implements OnInit {
         this.setMessage('Errore nel caricamento dei dati.', true);
       },
     });
+  }
+
+  isArchiveOnlySeason(): boolean {
+    const season = this.seasonOptions().find(s => s.value === this.selectedSeasonId);
+    return !!season && season.year_start <= ARCHIVE_ONLY_MAX_YEAR_START;
   }
 
   applyFilter() {

@@ -1,16 +1,45 @@
 """Injuries router."""
+import csv
+import io
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import date
 from app.database import get_db
-from app.models.injury import InjuryPlayer
+from app.models.injury import InjuryPlayer, InjuryArchive
 from app.models.player import PlayerMatchScore
 from app.services.auth_service import require_admin
 from app.services.fanta_client import fanta_client
 from app.services.sync_service import sync_votes
 
 router = APIRouter(prefix="/injuries", tags=["injuries"])
+
+_ARCHIVE_FIELDS = [
+    "id", "player_id", "player_name", "report_date", "expected_weeks",
+    "expected_return", "confirmed_return", "qualifies_for_temp_sub",
+    "is_active", "notes", "created_at",
+]
+
+
+def build_injuries_csv(db: Session, season_id: int) -> tuple[str, int]:
+    """CSV in memoria di TUTTI gli infortuni (attivi e rientrati) di una
+    stagione — usato come backup prima di azzerare InjuryPlayer alla
+    chiusura stagione. Ritorna (contenuto_csv, numero_righe)."""
+    injuries = db.query(InjuryPlayer).filter(InjuryPlayer.season_id == season_id).all()
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=_ARCHIVE_FIELDS)
+    writer.writeheader()
+    for i in injuries:
+        writer.writerow({
+            "id": i.id, "player_id": i.player_id,
+            "player_name": i.player.name if i.player else None,
+            "report_date": i.report_date, "expected_weeks": i.expected_weeks,
+            "expected_return": i.expected_return, "confirmed_return": i.confirmed_return,
+            "qualifies_for_temp_sub": i.qualifies_for_temp_sub, "is_active": i.is_active,
+            "notes": i.notes, "created_at": i.created_at,
+        })
+    return buffer.getvalue(), len(injuries)
 
 
 class InjuryCreate(BaseModel):
@@ -136,3 +165,16 @@ def delete_injury(injury_id: int, db: Session = Depends(get_db), _admin: str = D
     db.delete(injury)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/archive/{season_id}/csv")
+def download_injuries_archive_csv(season_id: int, db: Session = Depends(get_db)):
+    archive = db.query(InjuryArchive).filter(InjuryArchive.season_id == season_id).first()
+    if not archive:
+        raise HTTPException(404, "Nessun archivio infortuni per questa stagione")
+    buffer = io.BytesIO(archive.csv_content.encode("utf-8"))
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="injuries_archive_season_{season_id}.csv"'},
+    )

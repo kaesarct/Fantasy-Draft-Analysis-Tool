@@ -21,3 +21,15 @@ class InjuryPlayer(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     player = relationship("Player", back_populates="injuries")
+
+
+class InjuryArchive(Base):
+    """Backup CSV degli infortuni di una stagione, salvato alla chiusura
+    stagione prima di azzerare InjuryPlayer per quella stagione."""
+    __tablename__ = "injury_archives"
+
+    id = Column(Integer, primary_key=True, index=True)
+    season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False, unique=True)
+    csv_content = Column(Text, nullable=False)
+    row_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
