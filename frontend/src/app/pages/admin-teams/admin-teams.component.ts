@@ -30,7 +30,11 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
       }
 
       <!-- Allenatori -->
-      <div class="section-title">👤 Allenatori</div>
+      <div class="section-title collapsible" (click)="toggleSection('allenatori')">
+        <span class="collapse-arrow" [class.collapsed]="isCollapsed('allenatori')">▾</span>
+        👤 Allenatori
+      </div>
+      @if (!isCollapsed('allenatori')) {
       <div class="card mb-4 coach-panel">
         <div class="coach-form">
           <input pInputText placeholder="Username" [(ngModel)]="newUsername" />
@@ -69,6 +73,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
           }
         </div>
       </div>
+      }
 
       <!-- Selettore stagione condiviso dalle sezioni sotto -->
       <div class="filters-bar card mb-4">
@@ -84,7 +89,11 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
 
       @if (selectedSeasonId) {
         <!-- Associazioni -->
-        <div class="section-title">🔗 Associazioni squadra → allenatore ({{ teams().length }})</div>
+        <div class="section-title collapsible" (click)="toggleSection('associazioni')">
+          <span class="collapse-arrow" [class.collapsed]="isCollapsed('associazioni')">▾</span>
+          🔗 Associazioni squadra → allenatore ({{ teams().length }})
+        </div>
+        @if (!isCollapsed('associazioni')) {
         <div class="team-table card mb-4">
           @for (t of teams(); track t.id) {
             <div class="team-row">
@@ -128,9 +137,14 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             <p class="text-muted" style="padding:20px;">Nessuna squadra per questa stagione.</p>
           }
         </div>
+        }
 
         <!-- Gestione squadre -->
-        <div class="section-title">🛡️ Gestione squadre ({{ teams().length }})</div>
+        <div class="section-title collapsible" (click)="toggleSection('gestione')">
+          <span class="collapse-arrow" [class.collapsed]="isCollapsed('gestione')">▾</span>
+          🛡️ Gestione squadre ({{ teams().length }})
+        </div>
+        @if (!isCollapsed('gestione')) {
         <div class="team-table card mb-4">
           @for (t of teams(); track t.id) {
             <div class="team-row">
@@ -196,9 +210,14 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             (click)="createTeam()"
           ></button>
         </div>
+        }
 
         <!-- Unisci squadre duplicate -->
-        <div class="section-title">🔀 Unisci squadre duplicate</div>
+        <div class="section-title collapsible" (click)="toggleSection('duplicati')">
+          <span class="collapse-arrow" [class.collapsed]="isCollapsed('duplicati')">▾</span>
+          🔀 Unisci squadre duplicate
+        </div>
+        @if (!isCollapsed('duplicati')) {
         <div class="card mb-4 merge-panel">
           <p class="text-muted" style="padding:14px 16px 0; font-size:12px; margin:0;">
             Per squadre create due volte per errore di import (stesso club, nome leggermente diverso).
@@ -300,9 +319,14 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             <p class="text-muted" style="padding:10px 16px;">Seleziona due squadre diverse.</p>
           }
         </div>
+        }
 
         <!-- Iscrizioni altre competizioni -->
-        <div class="section-title">🏆 Iscrizioni altre competizioni ({{ otherCompetitionOptions().length }})</div>
+        <div class="section-title collapsible" (click)="toggleSection('coppe')">
+          <span class="collapse-arrow" [class.collapsed]="isCollapsed('coppe')">▾</span>
+          🏆 Iscrizioni altre competizioni ({{ otherCompetitionOptions().length }})
+        </div>
+        @if (!isCollapsed('coppe')) {
         <div class="card mb-4 cup-panel">
           <div class="filters-bar">
             <p-dropdown
@@ -364,9 +388,14 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             </div>
           }
         </div>
+        }
 
         <!-- Modifica classifica -->
-        <div class="section-title">📊 Modifica classifica</div>
+        <div class="section-title collapsible" (click)="toggleSection('classifica')">
+          <span class="collapse-arrow" [class.collapsed]="isCollapsed('classifica')">▾</span>
+          📊 Modifica classifica
+        </div>
+        @if (!isCollapsed('classifica')) {
         <div class="card mb-4 standings-panel">
           <div class="filters-bar">
             <p-dropdown
@@ -423,6 +452,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
             </div>
           }
         </div>
+        }
       }
     </div>
   `,
@@ -433,6 +463,14 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
     .back-link:hover { text-decoration: underline; }
     .page-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
     .section-title { font-weight: 700; margin-bottom: 10px; }
+    .section-title.collapsible {
+      display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    }
+    .collapse-arrow {
+      display: inline-block; font-size: 12px; color: var(--text-muted);
+      transition: transform .15s;
+    }
+    .collapse-arrow.collapsed { transform: rotate(-90deg); }
 
     .status-msg { padding: 12px 16px; font-size: 13px; }
     .status-msg.error { color: var(--text-negative, #e05260); }
@@ -541,6 +579,7 @@ export class AdminTeamsComponent implements OnInit {
   standingsRows = signal<any[]>([]);
   allTeamsForMerge = signal<any[]>([]);
   lineageNotes = signal<Record<number, string | undefined>>({});
+  collapsedSections = signal<Set<string>>(new Set());
 
   creating = signal(false);
   savingCoachId = signal<number | null>(null);
@@ -667,6 +706,18 @@ export class AdminTeamsComponent implements OnInit {
     this.loadTeams();
     this.loadLeagues();
     this.loadCompetitions();
+  }
+
+  toggleSection(key: string) {
+    this.collapsedSections.update(s => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  isCollapsed(key: string): boolean {
+    return this.collapsedSections().has(key);
   }
 
   activeAllenatoriOptions() {
