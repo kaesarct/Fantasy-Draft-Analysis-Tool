@@ -1,7 +1,6 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
 import { InputTextModule } from 'primeng/inputtext';
 import { DropdownModule } from 'primeng/dropdown';
 import { ButtonModule } from 'primeng/button';
@@ -85,23 +84,14 @@ const VOTES_COLUMNS = [
           [(ngModel)]="search"
           (ngModelChange)="applyFilter()"
         />
-        @if (auth.isAuthenticated()) {
+        @if (auth.isAuthenticated() && selectedSeasonId === currentSeasonId()) {
           <button
             pButton
             label="Importa da Fantacalcio"
             icon="pi pi-download"
             [loading]="importing()"
-            [disabled]="!selectedSeasonId || importingAll()"
+            [disabled]="!selectedSeasonId"
             (click)="importData()"
-          ></button>
-          <button
-            pButton
-            severity="secondary"
-            [label]="importingAll() ? 'Importazione ' + bulkProgress() : 'Importa tutto'"
-            icon="pi pi-cloud-download"
-            [loading]="importingAll()"
-            [disabled]="importing() || !seasonOptions().length"
-            (click)="importAll()"
           ></button>
         }
         @if (dataType === 'votes') {
@@ -117,17 +107,6 @@ const VOTES_COLUMNS = [
 
       @if (message()) {
         <div class="card mb-4 status-msg" [class.error]="messageIsError()">{{ message() }}</div>
-      }
-
-      @if (bulkResults().length) {
-        <div class="card mb-4 bulk-report">
-          @for (r of bulkResults(); track r.key) {
-            <div class="bulk-row" [class.error]="!r.ok">
-              <span class="bulk-label">{{ r.label }}</span>
-              <span class="text-muted">{{ r.detail }}</span>
-            </div>
-          }
-        </div>
       }
 
       @if (loading()) {
@@ -181,16 +160,6 @@ const VOTES_COLUMNS = [
     .status-msg { padding: 12px 16px; font-size: 13px; }
     .status-msg.error { color: var(--text-negative, #e05260); }
 
-    .bulk-report { padding: 8px 16px; }
-    .bulk-row {
-      display: flex; align-items: baseline; gap: 12px;
-      padding: 6px 0; font-size: 13px;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-    .bulk-row:last-child { border-bottom: none; }
-    .bulk-row.error .bulk-label { color: var(--text-negative, #e05260); }
-    .bulk-label { font-weight: 700; min-width: 200px; }
-
     .player-table { padding: 0; overflow: hidden; }
     .table-header {
       display: flex; align-items: center; gap: 8px;
@@ -211,13 +180,11 @@ const VOTES_COLUMNS = [
 })
 export class HistoryComponent implements OnInit {
   seasonOptions = signal<any[]>([]);
+  currentSeasonId = signal<number | null>(null);
   rows = signal<any[]>([]);
   filtered = signal<any[]>([]);
   loading = signal(false);
   importing = signal(false);
-  importingAll = signal(false);
-  bulkProgress = signal('');
-  bulkResults = signal<{ key: string; label: string; ok: boolean; detail: string }[]>([]);
   message = signal('');
   messageIsError = signal(false);
   columns = signal(STATS_COLUMNS);
@@ -242,9 +209,11 @@ export class HistoryComponent implements OnInit {
 
   ngOnInit() {
     this.api.getSeasons().subscribe({
-      next: seasons => this.seasonOptions.set(
-        seasons.map(s => ({ label: s.label, value: s.id }))
-      ),
+      next: seasons => {
+        this.seasonOptions.set(seasons.map(s => ({ label: s.label, value: s.id })));
+        const current = seasons.find(s => s.is_current);
+        this.currentSeasonId.set(current ? current.id : null);
+      },
     });
   }
 
@@ -302,47 +271,6 @@ export class HistoryComponent implements OnInit {
         this.setMessage(err.error?.detail || "Errore durante l'import.", true);
       },
     });
-  }
-
-  async importAll() {
-    const seasons = this.seasonOptions();
-    const types: ('stats' | 'prices' | 'votes')[] = ['stats', 'prices', 'votes'];
-    const typeLabels = { stats: 'statistiche', prices: 'quotazioni', votes: 'voti' };
-    const total = seasons.length * types.length;
-    let done = 0;
-
-    this.importingAll.set(true);
-    this.message.set('');
-    this.bulkResults.set([]);
-
-    for (const season of seasons) {
-      for (const type of types) {
-        this.bulkProgress.set(`${done + 1}/${total}`);
-        const label = `${season.label} · ${typeLabels[type]}`;
-        try {
-          const res = await firstValueFrom(this.api.importSeasonHistory(season.value, type));
-          const skipped = res.skipped_match_days?.length ? `, ${res.skipped_match_days.length} giornate senza dati` : '';
-          this.bulkResults.update(r => [...r, {
-            key: `${season.value}-${type}`,
-            label,
-            ok: true,
-            detail: res.imported ? `${res.rows} righe importate${skipped}` : res.message,
-          }]);
-        } catch (err: any) {
-          this.bulkResults.update(r => [...r, {
-            key: `${season.value}-${type}`,
-            label,
-            ok: false,
-            detail: err?.error?.detail || 'Errore durante l\'import',
-          }]);
-        }
-        done++;
-      }
-    }
-
-    this.importingAll.set(false);
-    this.bulkProgress.set('');
-    if (this.selectedSeasonId) this.loadData();
   }
 
   csvUrl(): string {
