@@ -10,6 +10,12 @@ import { ApiService } from '../../core/services/api.service';
 
 const ROLE_ORDER = ['P', 'D', 'C', 'A'];
 
+const LEAGUE_OPTIONS = [
+  { label: 'Gold', value: 'GOLD' },
+  { label: 'Bronze', value: 'BRONZE' },
+  { label: 'Carbon', value: 'CARBON' },
+];
+
 @Component({
   selector: 'app-admin-market',
   standalone: true,
@@ -145,6 +151,12 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
             equivale a un primo caricamento completo.
           </p>
           <div class="winter-form-row">
+            <p-dropdown
+              [options]="LEAGUE_OPTIONS"
+              [(ngModel)]="summerLeagueLevel"
+              placeholder="Lega"
+              styleClass="filter-drop"
+            />
             <input type="file" accept=".csv,.xlsx,.xls,.dat,.html,.htm" (change)="onSummerFileSelected($event)" />
             <input pInputText type="date" [(ngModel)]="summerDate" class="trade-date-input" />
             <label class="text-muted" style="display:flex; align-items:center; gap:4px; font-size:12px;">
@@ -152,7 +164,7 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
               Crea giocatori mancanti (file storici)
             </label>
             <button pButton label="Verifica" size="small" class="p-button-outlined"
-              [disabled]="!summerFile" [loading]="summerLoading()" (click)="runSummerRoster(true)"></button>
+              [disabled]="!summerFile || !summerLeagueLevel" [loading]="summerLoading()" (click)="runSummerRoster(true)"></button>
             <button pButton label="Applica" size="small"
               [disabled]="!summerPreview()" [loading]="summerLoading()" (click)="runSummerRoster(false)"></button>
           </div>
@@ -162,6 +174,9 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
               @for (r of preview.report; track r.team_id) {
                 <div class="winter-team-report">
                   <strong>{{ r.team_name }}</strong>
+                  @if (r.is_new_team) {
+                    <span class="new-team-badge">🆕 nuova squadra</span>
+                  }
                   <span class="text-muted">(delta crediti: {{ r.credit_delta }})</span>
                   @for (p of r.released; track p.player_id) {
                     <div class="text-muted">− {{ p.player_name }} (rimborso {{ p.refund }})</div>
@@ -181,6 +196,12 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
                 <p class="trade-warning">
                   Non riconosciuti — squadre: {{ preview.unmatched_teams.join(', ') || 'nessuna' }};
                   giocatori: {{ preview.unmatched_players.join(', ') || 'nessuno' }}
+                </p>
+              }
+              @if (preview.teams_without_data?.length) {
+                <p class="trade-warning">
+                  ⚠️ Squadre di questa lega senza righe nel file:
+                  {{ teamsWithoutDataSummary(preview.teams_without_data) }} — verifica se sono uscite dalla lega.
                 </p>
               }
               @if (preview.applied) {
@@ -198,6 +219,12 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
             svincoli e acquisti per differenza rispetto alla rosa attuale. L'asta avviene fuori piattaforma.
           </p>
           <div class="winter-form-row">
+            <p-dropdown
+              [options]="LEAGUE_OPTIONS"
+              [(ngModel)]="winterLeagueLevel"
+              placeholder="Lega"
+              styleClass="filter-drop"
+            />
             <input type="file" accept=".csv,.xlsx,.xls,.dat,.html,.htm" (change)="onFileSelected($event)" />
             <input pInputText type="date" [(ngModel)]="winterDate" class="trade-date-input" />
             <label class="text-muted" style="display:flex; align-items:center; gap:4px; font-size:12px;">
@@ -205,7 +232,7 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
               Crea giocatori mancanti (file storici)
             </label>
             <button pButton label="Verifica" size="small" class="p-button-outlined"
-              [disabled]="!winterFile" [loading]="winterLoading()" (click)="runWinterMarket(true)"></button>
+              [disabled]="!winterFile || !winterLeagueLevel" [loading]="winterLoading()" (click)="runWinterMarket(true)"></button>
             <button pButton label="Applica" size="small"
               [disabled]="!winterPreview()" [loading]="winterLoading()" (click)="runWinterMarket(false)"></button>
           </div>
@@ -215,6 +242,9 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
               @for (r of preview.report; track r.team_id) {
                 <div class="winter-team-report">
                   <strong>{{ r.team_name }}</strong>
+                  @if (r.is_new_team) {
+                    <span class="new-team-badge">🆕 nuova squadra</span>
+                  }
                   <span class="text-muted">(delta crediti: {{ r.credit_delta }})</span>
                   @for (p of r.released; track p.player_id) {
                     <div class="text-muted">− {{ p.player_name }} (rimborso {{ p.refund }})</div>
@@ -234,6 +264,12 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
                 <p class="trade-warning">
                   Non riconosciuti — squadre: {{ preview.unmatched_teams.join(', ') || 'nessuna' }};
                   giocatori: {{ preview.unmatched_players.join(', ') || 'nessuno' }}
+                </p>
+              }
+              @if (preview.teams_without_data?.length) {
+                <p class="trade-warning">
+                  ⚠️ Squadre di questa lega senza righe nel file:
+                  {{ teamsWithoutDataSummary(preview.teams_without_data) }} — verifica se sono uscite dalla lega.
                 </p>
               }
               @if (preview.applied) {
@@ -285,10 +321,15 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
     .winter-report { border-top: 1px solid var(--border-subtle); padding: 4px 0; }
     .winter-team-report { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
     .winter-team-report:last-child { border-bottom: none; }
+    .new-team-badge {
+      font-size: 11px; font-weight: 700; margin-left: 8px; padding: 2px 8px;
+      border-radius: 999px; background: rgba(76,175,80,.15); color: var(--accent-green, #4caf50);
+    }
   `],
 })
 export class AdminMarketComponent implements OnInit {
   ROLE_ORDER = ROLE_ORDER;
+  LEAGUE_OPTIONS = LEAGUE_OPTIONS;
 
   seasonOptions = signal<any[]>([]);
   teams = signal<any[]>([]);
@@ -319,9 +360,11 @@ export class AdminMarketComponent implements OnInit {
   winterFile: File | null = null;
   winterDate: string = new Date().toISOString().slice(0, 10);
   winterCreateMissingPlayers = false;
+  winterLeagueLevel: string | null = null;
   summerFile: File | null = null;
   summerDate: string = new Date().toISOString().slice(0, 10);
   summerCreateMissingPlayers = false;
+  summerLeagueLevel: string | null = null;
 
   constructor(private api: ApiService) {}
 
@@ -458,9 +501,9 @@ export class AdminMarketComponent implements OnInit {
   }
 
   runSummerRoster(dryRun: boolean) {
-    if (!this.summerFile || !this.selectedSeasonId) return;
+    if (!this.summerFile || !this.selectedSeasonId || !this.summerLeagueLevel) return;
     this.summerLoading.set(true);
-    this.api.reconcileWinterMarket(this.selectedSeasonId, this.summerFile, dryRun, this.summerDate, this.summerCreateMissingPlayers).subscribe({
+    this.api.reconcileWinterMarket(this.selectedSeasonId, this.summerLeagueLevel, this.summerFile, dryRun, this.summerDate, this.summerCreateMissingPlayers).subscribe({
       next: res => {
         this.summerLoading.set(false);
         this.summerPreview.set(res);
@@ -477,10 +520,14 @@ export class AdminMarketComponent implements OnInit {
     return createdPlayers.map(p => `${p.player_name} (${p.role})`).join(', ');
   }
 
+  teamsWithoutDataSummary(teams: { team_name: string }[]): string {
+    return teams.map(t => t.team_name).join(', ');
+  }
+
   runWinterMarket(dryRun: boolean) {
-    if (!this.winterFile || !this.selectedSeasonId) return;
+    if (!this.winterFile || !this.selectedSeasonId || !this.winterLeagueLevel) return;
     this.winterLoading.set(true);
-    this.api.reconcileWinterMarket(this.selectedSeasonId, this.winterFile, dryRun, this.winterDate, this.winterCreateMissingPlayers).subscribe({
+    this.api.reconcileWinterMarket(this.selectedSeasonId, this.winterLeagueLevel, this.winterFile, dryRun, this.winterDate, this.winterCreateMissingPlayers).subscribe({
       next: res => {
         this.winterLoading.set(false);
         this.winterPreview.set(res);

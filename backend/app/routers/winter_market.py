@@ -19,8 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.fanta_team import FantaTeam, FantaRoster
+from app.models.fanta_team import FantaTeam, FantaRoster, League
 from app.models.player import Player
+from app.routers.league import MAIN_LEAGUE_TYPES
 from app.services.auth_service import require_admin
 from app.services.sync_service import _match_player_id
 
@@ -87,6 +88,7 @@ def _read_file(file: UploadFile) -> pd.DataFrame:
 @router.post("/reconcile")
 def reconcile_winter_market(
     season_id: int = Form(...),
+    league_level: str = Form(...),
     dry_run: bool = Form(True),
     create_missing_players: bool = Form(False),
     market_date: str | None = Form(None),
@@ -94,6 +96,18 @@ def reconcile_winter_market(
     db: Session = Depends(get_db),
     _admin: str = Depends(require_admin),
 ):
+    league_level = league_level.upper()
+    if league_level not in MAIN_LEAGUE_TYPES:
+        raise HTTPException(400, f"Lega non valida: {league_level}")
+    league = db.query(League).filter(
+        League.season_id == season_id, League.level == league_level
+    ).first()
+    if not league:
+        raise HTTPException(
+            400,
+            f"Nessuna lega {league_level} per questa stagione: creala prima in Gestione Squadre.",
+        )
+
     df = _read_file(file)
     team_col = _pick_column(df.columns, _TEAM_COLUMNS)
     player_col = _pick_column(df.columns, _PLAYER_COLUMNS)
@@ -108,13 +122,16 @@ def reconcile_winter_market(
 
     teams_by_name = {
         t.name.strip().lower(): t
-        for t in db.query(FantaTeam).filter(FantaTeam.season_id == season_id).all()
+        for t in db.query(FantaTeam).filter(
+            FantaTeam.season_id == season_id, FantaTeam.league_id == league.id
+        ).all()
     }
 
     rows_by_team: dict[int, list[tuple[int, float]]] = {}
     unmatched_teams: set[str] = set()
     unmatched_players: set[str] = set()
     created_players: list[dict] = []
+    new_team_ids: set[int] = set()
 
     for _, row in df.iterrows():
         team_name = str(row[team_col]).strip()
@@ -126,8 +143,19 @@ def reconcile_winter_market(
 
         team = teams_by_name.get(team_name.lower())
         if not team:
-            unmatched_teams.add(team_name)
-            continue
+            if not team_name:
+                unmatched_teams.add(team_name)
+                continue
+            # Nome mai visto in questa lega/stagione: squadra nuova arrivata
+            # (tipicamente non esisteva l'anno scorso) — creata al volo.
+            # Flush senza commit se dry_run, stesso pattern già usato sotto
+            # per i giocatori mancanti: l'id serve per l'anteprima ma la riga
+            # non sopravvive se la richiesta non arriva a db.commit().
+            team = FantaTeam(name=team_name, season_id=season_id, league_id=league.id)
+            db.add(team)
+            db.flush()
+            teams_by_name[team_name.lower()] = team
+            new_team_ids.add(team.id)
         row_role = str(row[role_col]).strip().upper() if role_col else None
         if row_role not in _VALID_ROLES:
             row_role = None
@@ -186,6 +214,7 @@ def reconcile_winter_market(
         report.append({
             "team_id": team_id,
             "team_name": team.name,
+            "is_new_team": team_id in new_team_ids,
             "released": [
                 {"player_id": r.player_id, "player_name": players_by_id[r.player_id].name, "refund": r.purchase_price}
                 for r in released
@@ -199,14 +228,25 @@ def reconcile_winter_market(
             "credit_delta": credit_refund - credit_spent,
         })
 
+    all_league_teams = db.query(FantaTeam).filter(
+        FantaTeam.season_id == season_id, FantaTeam.league_id == league.id
+    ).all()
+    teams_without_data = [
+        {"team_id": t.id, "team_name": t.name}
+        for t in all_league_teams
+        if t.id not in rows_by_team
+    ]
+
     if not dry_run:
         db.commit()
 
     return {
         "ok": True,
         "applied": not dry_run,
+        "league_level": league_level,
         "report": report,
         "created_players": created_players,
         "unmatched_teams": sorted(unmatched_teams),
         "unmatched_players": sorted(unmatched_players),
+        "teams_without_data": teams_without_data,
     }
