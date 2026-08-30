@@ -113,30 +113,34 @@ import { ApiService } from '../../core/services/api.service';
           <p-skeleton height="120px" />
         } @else if (scores().length) {
           <div class="player-table card">
-            <div class="table-header">
-              <span style="width:60px">Giornata</span>
-              <span style="width:70px;text-align:right">Voto</span>
-              <span style="width:50px;text-align:right">Gol</span>
-              <span style="width:50px;text-align:right">Ass.</span>
-              <span style="width:50px;text-align:right">Amm.</span>
-              <span style="width:50px;text-align:right">Esp.</span>
-              <span style="width:80px;text-align:right">Bonus</span>
-              <span style="width:80px;text-align:right">Malus</span>
-              <span style="width:70px;text-align:right">Finale</span>
-            </div>
-            @for (s of scores(); track s.match_day) {
-              <div class="score-row">
-                <span style="width:60px">{{ s.match_day }}</span>
-                <span style="width:70px;text-align:right">{{ s.vote ?? '—' }}</span>
-                <span style="width:50px;text-align:right">{{ s.goals }}</span>
-                <span style="width:50px;text-align:right">{{ s.assists }}</span>
-                <span style="width:50px;text-align:right">{{ s.yellow_cards }}</span>
-                <span style="width:50px;text-align:right">{{ s.red_cards }}</span>
-                <span style="width:80px;text-align:right" class="text-positive">{{ s.bonus_total || '—' }}</span>
-                <span style="width:80px;text-align:right" class="text-negative">{{ s.malus_total || '—' }}</span>
-                <span style="width:70px;text-align:right;font-weight:700">{{ s.total_score ?? '—' }}</span>
+            <div class="table-scroll">
+              <div class="scores-table">
+                <div class="table-header">
+                  <span style="width:60px">Giornata</span>
+                  <span style="width:70px;text-align:right">Voto</span>
+                  <span style="width:50px;text-align:right">Gol</span>
+                  <span style="width:50px;text-align:right">Ass.</span>
+                  <span style="width:50px;text-align:right">Amm.</span>
+                  <span style="width:50px;text-align:right">Esp.</span>
+                  <span style="width:80px;text-align:right">Bonus</span>
+                  <span style="width:80px;text-align:right">Malus</span>
+                  <span style="width:70px;text-align:right">Finale</span>
+                </div>
+                @for (s of scores(); track s.match_day) {
+                  <div class="score-row">
+                    <span style="width:60px">{{ s.match_day }}</span>
+                    <span style="width:70px;text-align:right">{{ s.vote ?? '—' }}</span>
+                    <span style="width:50px;text-align:right">{{ s.goals }}</span>
+                    <span style="width:50px;text-align:right">{{ s.assists }}</span>
+                    <span style="width:50px;text-align:right">{{ s.yellow_cards }}</span>
+                    <span style="width:50px;text-align:right">{{ s.red_cards }}</span>
+                    <span style="width:80px;text-align:right" class="text-positive">{{ s.bonus_total || '—' }}</span>
+                    <span style="width:80px;text-align:right" class="text-negative">{{ s.malus_total || '—' }}</span>
+                    <span style="width:70px;text-align:right;font-weight:700">{{ s.total_score ?? '—' }}</span>
+                  </div>
+                }
               </div>
-            }
+            </div>
           </div>
         } @else {
           <p class="text-muted">Nessun voto disponibile per questa stagione.</p>
@@ -160,6 +164,7 @@ import { ApiService } from '../../core/services/api.service';
     .player-table { padding: 0; overflow: hidden; }
     .table-scroll { padding: 0; overflow-x: auto; }
     .season-table { min-width: 1050px; }
+    .scores-table { min-width: 680px; }
     .table-header, .score-row {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 16px;

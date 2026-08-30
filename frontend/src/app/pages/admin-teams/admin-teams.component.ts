@@ -356,6 +356,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
                     @for (t of available(); track t.id) {
                       <span class="assigned-chip draggable-chip" pDraggable="team" (onDragStart)="startDrag(t, 'available')">
                         {{ t.name }}
+                        <button class="chip-btn" title="Iscrivi" (click)="addCompetitionParticipant(t)">+</button>
                       </span>
                     }
                     @empty {
@@ -537,7 +538,7 @@ const MAIN_LEAGUE_TYPES = ['GOLD', 'BRONZE', 'CARBON'];
 
     .manual-pick { display: flex; align-items: center; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
     .manual-drop { min-width: 220px; }
-    .merge-pick-group { display: flex; align-items: center; gap: 6px; }
+    .merge-pick-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .merge-season-drop { min-width: 110px; }
 
     .cup-panel { padding: 0; }
@@ -979,7 +980,7 @@ export class AdminTeamsComponent implements OnInit {
     }
   }
 
-  private addCompetitionParticipant(team: any) {
+  addCompetitionParticipant(team: any) {
     if (!this.selectedCompetitionId) return;
     this.api.addCompetitionParticipant(this.selectedCompetitionId, team.id).subscribe({
       next: () => this.loadParticipants(),

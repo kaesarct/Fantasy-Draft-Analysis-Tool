@@ -182,7 +182,7 @@ import { AuthService } from '../../core/services/auth.service';
         header="Inserisci infortunato"
         [(visible)]="addModalVisible"
         [modal]="true"
-        [style]="{ width: '420px' }"
+        [style]="{ width: 'min(420px, 92vw)' }"
         (onHide)="resetAddModal()"
       >
         <input
@@ -228,6 +228,7 @@ import { AuthService } from '../../core/services/auth.service';
       background: var(--bg-card); border: 1px solid var(--border-color);
       border-radius: var(--radius-md); padding: 16px 20px;
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      flex-wrap: wrap;
       transition: border-color var(--transition);
     }
     .injury-card:hover { border-color: var(--accent-orange); }
@@ -249,6 +250,7 @@ import { AuthService } from '../../core/services/auth.service';
       background: var(--bg-card); border: 1px solid var(--border-color);
       border-radius: var(--radius-md); padding: 10px 16px;
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      flex-wrap: wrap;
       font-size: 13px;
     }
 

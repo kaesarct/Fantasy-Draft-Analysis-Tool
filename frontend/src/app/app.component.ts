@@ -16,8 +16,18 @@ interface NavItem {
   imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="app-shell">
+      <!-- Barra mobile: solo sotto il breakpoint -->
+      <div class="mobile-topbar">
+        <button class="hamburger-btn" (click)="mobileMenuOpen.set(true)" aria-label="Apri menu">☰</button>
+        <div class="mobile-topbar-title"><span class="logo-icon">⚽</span> FT Platform</div>
+      </div>
+
+      @if (mobileMenuOpen()) {
+        <div class="sidebar-overlay" (click)="mobileMenuOpen.set(false)"></div>
+      }
+
       <!-- Sidebar -->
-      <nav class="sidebar">
+      <nav class="sidebar" [class.mobile-open]="mobileMenuOpen()">
         <div class="sidebar-header">
           <div class="logo">
             <span class="logo-icon">⚽</span>
@@ -31,7 +41,7 @@ interface NavItem {
         <ul class="nav-list">
           @for (item of visibleNavItems(); track item.route) {
             <li>
-              <a [routerLink]="item.route" routerLinkActive="active" class="nav-link">
+              <a [routerLink]="item.route" routerLinkActive="active" class="nav-link" (click)="mobileMenuOpen.set(false)">
                 <span class="nav-icon">{{ item.icon }}</span>
                 <span class="nav-label">{{ item.label }}</span>
               </a>
@@ -43,10 +53,10 @@ interface NavItem {
           @if (auth.isAuthenticated()) {
             <div class="auth-status">
               <span class="text-muted" style="font-size:12px">👤 {{ auth.username() }}</span>
-              <a class="nav-link auth-link" (click)="logout()">🚪 Esci</a>
+              <a class="nav-link auth-link" (click)="logout(); mobileMenuOpen.set(false)">🚪 Esci</a>
             </div>
           } @else {
-            <a class="nav-link auth-link" routerLink="/login">🔒 Accedi</a>
+            <a class="nav-link auth-link" routerLink="/login" (click)="mobileMenuOpen.set(false)">🔒 Accedi</a>
           }
           <div class="sidebar-version">{{ version() }}</div>
         </div>
@@ -170,6 +180,75 @@ interface NavItem {
       overflow-y: auto;
       background: var(--bg-base);
     }
+
+    /* ── Barra mobile + overlay: nascosti su desktop ────────── */
+    .mobile-topbar { display: none; }
+    .sidebar-overlay {
+      display: none;
+    }
+
+    /* ── Sotto 768px: sidebar diventa un drawer a scomparsa ─── */
+    @media (max-width: 768px) {
+      .mobile-topbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 52px;
+        padding: 0 12px;
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-color);
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        z-index: 300;
+      }
+
+      .hamburger-btn {
+        background: none;
+        border: none;
+        color: var(--text-primary);
+        font-size: 22px;
+        line-height: 1;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+
+      .mobile-topbar-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 800;
+        color: var(--text-primary);
+      }
+
+      .sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.5);
+        z-index: 200;
+      }
+
+      .sidebar {
+        position: fixed;
+        top: 0; left: 0;
+        height: 100vh;
+        z-index: 250;
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        padding-top: 52px; /* spazio per la barra fissa, evita di sovrapporre l'header della sidebar */
+      }
+
+      .sidebar .sidebar-header { display: none; }
+
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+
+      .main-content {
+        padding-top: 52px;
+      }
+    }
   `],
 })
 export class AppComponent implements OnInit {
@@ -187,6 +266,7 @@ export class AppComponent implements OnInit {
   ];
 
   version = signal('…');
+  mobileMenuOpen = signal(false);
 
   constructor(public auth: AuthService, private api: ApiService) {}
 

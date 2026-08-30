@@ -87,14 +87,14 @@ import { AuthService } from '../../core/services/auth.service';
     .sync-msg.error { color: var(--text-negative, #e05260); }
     .sync-report { padding: 8px 16px; margin-bottom: 16px; }
     .sync-report-row {
-      display: flex; align-items: baseline; gap: 12px;
+      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
       padding: 6px 0; font-size: 13px;
       border-bottom: 1px solid var(--border-subtle);
     }
     .sync-report-row:last-child { border-bottom: none; }
     .sync-report-row.error .comp-name { color: var(--text-negative, #e05260); }
     .comp-name { font-weight: 700; min-width: 160px; }
-    .matches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .matches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 
     .match-card {
       background: var(--bg-card); border: 1px solid var(--border-color);
@@ -104,8 +104,8 @@ import { AuthService } from '../../core/services/auth.service';
     .match-card:hover { border-color: var(--accent-blue); transform: translateY(-2px); }
     .match-card.played { opacity: 0.65; }
 
-    .match-body { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .team { font-weight: 700; font-size: 14px; flex: 1; }
+    .match-body { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
+    .team { font-weight: 700; font-size: 14px; flex: 1; min-width: 90px; text-align: center; }
     .home { text-align: right; }
     .away { text-align: left; }
     .score-block { text-align: center; flex-shrink: 0; }

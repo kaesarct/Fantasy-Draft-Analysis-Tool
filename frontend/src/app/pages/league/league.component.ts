@@ -67,29 +67,31 @@ const PHASE_LABELS: Record<string, string> = {
                     @for (g of bracket().groups; track g.name) {
                       <div class="group-card">
                         <div class="group-title">{{ g.name }}</div>
-                        <table class="group-table">
-                          <thead>
-                            <tr>
-                              <th>Squadra</th>
-                              <th>G</th><th>V</th><th>N</th><th>P</th>
-                              <th>GF</th><th>GS</th><th>Pt</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            @for (s of g.standings; track s.fanta_team_id) {
+                        <div class="table-scroll">
+                          <table class="group-table">
+                            <thead>
                               <tr>
-                                <td class="team-name">{{ s.name }}</td>
-                                <td>{{ s.played }}</td>
-                                <td class="text-positive">{{ s.wins }}</td>
-                                <td>{{ s.draws }}</td>
-                                <td class="text-negative">{{ s.losses }}</td>
-                                <td>{{ s.goals_for }}</td>
-                                <td>{{ s.goals_against }}</td>
-                                <td class="pts-col">{{ s.pts }}</td>
+                                <th>Squadra</th>
+                                <th>G</th><th>V</th><th>N</th><th>P</th>
+                                <th>GF</th><th>GS</th><th>Pt</th>
                               </tr>
-                            }
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              @for (s of g.standings; track s.fanta_team_id) {
+                                <tr>
+                                  <td class="team-name">{{ s.name }}</td>
+                                  <td>{{ s.played }}</td>
+                                  <td class="text-positive">{{ s.wins }}</td>
+                                  <td>{{ s.draws }}</td>
+                                  <td class="text-negative">{{ s.losses }}</td>
+                                  <td>{{ s.goals_for }}</td>
+                                  <td>{{ s.goals_against }}</td>
+                                  <td class="pts-col">{{ s.pts }}</td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     }
                   </div>
@@ -126,6 +128,7 @@ const PHASE_LABELS: Record<string, string> = {
                 }
               }
             } @else {
+              <div class="table-scroll">
               <p-table [value]="standings()" styleClass="standing-table" [rowHover]="true">
                 <ng-template pTemplate="header">
                   <tr>
@@ -169,6 +172,7 @@ const PHASE_LABELS: Record<string, string> = {
                   </td></tr>
                 </ng-template>
               </p-table>
+              </div>
             }
           </p-tabPanel>
         }
@@ -187,7 +191,10 @@ const PHASE_LABELS: Record<string, string> = {
       font-size: 13px; font-weight: 600; margin-bottom: 16px;
     }
 
+    .table-scroll { overflow-x: auto; }
+
     :host ::ng-deep .p-tabview-panels { padding: 0; margin-top: 16px; }
+    :host ::ng-deep .standing-table { min-width: 600px; }
     :host ::ng-deep .standing-table .p-datatable-thead th {
       background: var(--bg-elevated);
       color: var(--text-muted);
@@ -215,7 +222,7 @@ const PHASE_LABELS: Record<string, string> = {
     }
     .group-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
     .group-title { font-weight: 700; font-size: 13px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
-    .group-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .group-table { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 12px; }
     .group-table th {
       color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 10px;
       text-align: center; padding: 6px 8px;
@@ -229,7 +236,7 @@ const PHASE_LABELS: Record<string, string> = {
     .round-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
     .ties-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
     .tie-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; }
-    .tie-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+    .tie-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; padding: 4px 0; font-size: 13px; }
     .tie-row.winner { font-weight: 800; color: var(--accent-green); }
     .tie-score { font-weight: 800; }
     .tie-legs { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-muted); }

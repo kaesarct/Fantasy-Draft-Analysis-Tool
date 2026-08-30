@@ -55,47 +55,49 @@ import { ApiService } from '../../core/services/api.service';
         </div>
       } @else {
         <div class="player-table card">
-          <div class="table-header">
-            <span style="width:40px">#</span>
-            <span style="flex:1">Giocatore</span>
-            <span style="width:80px;text-align:center">Ruolo</span>
-            <span style="width:100px;text-align:right">Quotazione</span>
-            <span style="width:80px;text-align:right">FVM</span>
-            <span style="width:70px;text-align:right">Diff.</span>
-          </div>
-          @for (p of filtered(); track p.id; let i = $index) {
-            <a [routerLink]="['/players', p.id]" class="player-row">
-              <span class="row-num text-muted">{{ i + 1 }}</span>
-              <span class="player-name">{{ p.name }}</span>
-              <span style="width:80px;text-align:center" class="role-badges">
-                @for (r of p.roles; track r) {
-                  <span class="role-badge role-{{ r }}">{{ r }}</span>
+          <div class="table-scroll">
+            <div class="table-header">
+              <span style="width:40px">#</span>
+              <span style="flex:1">Giocatore</span>
+              <span style="width:80px;text-align:center">Ruolo</span>
+              <span style="width:100px;text-align:right">Quotazione</span>
+              <span style="width:80px;text-align:right">FVM</span>
+              <span style="width:70px;text-align:right">Diff.</span>
+            </div>
+            @for (p of filtered(); track p.id; let i = $index) {
+              <a [routerLink]="['/players', p.id]" class="player-row">
+                <span class="row-num text-muted">{{ i + 1 }}</span>
+                <span class="player-name">{{ p.name }}</span>
+                <span style="width:80px;text-align:center" class="role-badges">
+                  @for (r of p.roles; track r) {
+                    <span class="role-badge role-{{ r }}">{{ r }}</span>
+                  }
+                </span>
+                @if (selectedSeasonId) {
+                  <span style="width:100px;text-align:right;font-weight:700">{{ p.price ?? '—' }}</span>
+                  <span style="width:80px;text-align:right;color:var(--accent-blue)">{{ p.fvm ?? '—' }}</span>
+                  <span style="width:70px;text-align:right"
+                        [class.text-positive]="(p.price_diff ?? 0) > 0"
+                        [class.text-negative]="(p.price_diff ?? 0) < 0">
+                    {{ (p.price_diff ?? 0) > 0 ? '+' : '' }}{{ p.price_diff ?? '0' }}
+                  </span>
+                } @else {
+                  <span style="width:100px;text-align:right;font-weight:700">
+                    {{ p.price_min ?? '—' }}–{{ p.price_max ?? '—' }}
+                  </span>
+                  <span style="width:80px;text-align:right;color:var(--accent-blue)">
+                    {{ p.fvm_min ?? '—' }}–{{ p.fvm_max ?? '—' }}
+                  </span>
+                  <span style="width:70px;text-align:right">
+                    <span [class.text-negative]="(p.diff_min ?? 0) < 0">{{ p.diff_min ?? '—' }}</span>/<span [class.text-positive]="(p.diff_max ?? 0) > 0">{{ p.diff_max ?? '—' }}</span>
+                  </span>
                 }
-              </span>
-              @if (selectedSeasonId) {
-                <span style="width:100px;text-align:right;font-weight:700">{{ p.price ?? '—' }}</span>
-                <span style="width:80px;text-align:right;color:var(--accent-blue)">{{ p.fvm ?? '—' }}</span>
-                <span style="width:70px;text-align:right"
-                      [class.text-positive]="(p.price_diff ?? 0) > 0"
-                      [class.text-negative]="(p.price_diff ?? 0) < 0">
-                  {{ (p.price_diff ?? 0) > 0 ? '+' : '' }}{{ p.price_diff ?? '0' }}
-                </span>
-              } @else {
-                <span style="width:100px;text-align:right;font-weight:700">
-                  {{ p.price_min ?? '—' }}–{{ p.price_max ?? '—' }}
-                </span>
-                <span style="width:80px;text-align:right;color:var(--accent-blue)">
-                  {{ p.fvm_min ?? '—' }}–{{ p.fvm_max ?? '—' }}
-                </span>
-                <span style="width:70px;text-align:right">
-                  <span [class.text-negative]="(p.diff_min ?? 0) < 0">{{ p.diff_min ?? '—' }}</span>/<span [class.text-positive]="(p.diff_max ?? 0) > 0">{{ p.diff_max ?? '—' }}</span>
-                </span>
-              }
-            </a>
-          }
-          @empty {
-            <p class="text-muted" style="padding:20px;">Nessun giocatore trovato.</p>
-          }
+              </a>
+            }
+            @empty {
+              <p class="text-muted" style="padding:20px;">Nessun giocatore trovato.</p>
+            }
+          </div>
         </div>
       }
     </div>
@@ -114,17 +116,20 @@ import { ApiService } from '../../core/services/api.service';
     .results-count { margin-left: auto; font-size: 12px; }
 
     .player-table { padding: 0; overflow: hidden; }
+    .table-scroll { overflow-x: auto; }
     .table-header {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 16px; font-size: 11px; font-weight: 700;
       color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em;
       border-bottom: 1px solid var(--border-color);
+      min-width: 480px;
     }
     .player-row {
       display: flex; align-items: center; gap: 8px;
       padding: 12px 16px; border-bottom: 1px solid var(--border-subtle);
       text-decoration: none; color: var(--text-primary);
       transition: background var(--transition);
+      min-width: 480px;
     }
     .player-row:hover { background: var(--bg-elevated); }
     .row-num { width: 40px; font-size: 12px; }

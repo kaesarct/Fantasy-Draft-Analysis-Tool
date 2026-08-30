@@ -426,7 +426,7 @@ interface PendingMerge {
     .conflict-item { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); }
     .conflict-item:last-of-type { border-bottom: none; }
     .conflict-meta { font-size: 12px; margin-bottom: 6px; }
-    .conflict-row { display: flex; align-items: center; gap: 16px; font-size: 12px; padding: 2px 0; }
+    .conflict-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; padding: 2px 0; }
     .conflict-col { min-width: 140px; font-weight: 600; }
     .conflict-val { flex: 1; }
     .conflict-choice { display: flex; gap: 8px; margin-top: 8px; }

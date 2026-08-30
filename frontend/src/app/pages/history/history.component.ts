@@ -120,40 +120,42 @@ const VOTES_COLUMNS = [
         }
       } @else if (selectedSeasonId) {
         <div class="player-table card">
-          <div class="table-header">
-            <span style="width:40px">#</span>
-            @for (col of columns(); track col.field) {
-              <span [style.flex]="col.field === 'player_name' ? '1' : null"
-                    [style.width]="col.field === 'player_name' ? null : '80px'"
-                    [style.text-align]="col.field === 'player_name' ? null : 'right'">
-                {{ col.label }}
-              </span>
-            }
-          </div>
-          @for (row of filtered(); track row.fanta_player_id; let i = $index) {
-            <div class="player-row">
-              <span class="row-num text-muted">{{ i + 1 }}</span>
+          <div class="table-scroll">
+            <div class="table-header">
+              <span style="width:40px">#</span>
               @for (col of columns(); track col.field) {
                 <span [style.flex]="col.field === 'player_name' ? '1' : null"
                       [style.width]="col.field === 'player_name' ? null : '80px'"
-                      [style.text-align]="col.field === 'player_name' ? null : 'right'"
-                      [style.font-weight]="col.field === 'player_name' ? '600' : null">
-                  {{ row[col.field] ?? '—' }}
+                      [style.text-align]="col.field === 'player_name' ? null : 'right'">
+                  {{ col.label }}
                 </span>
               }
             </div>
-          }
-          @empty {
-            <p class="text-muted" style="padding:20px;">
-              @if (selectedSeasonId === currentSeasonId()) {
-                Nessun dato per questa stagione. Usa "Importa da Fantacalcio" per scaricarli.
-              } @else if (isArchiveOnlySeason() && dataType !== 'stats') {
-                {{ dataType === 'prices' ? 'Le quotazioni' : 'I voti per giornata' }} non sono disponibili per questa stagione storica: è disponibile solo la scheda Statistiche.
-              } @else {
-                Nessun dato per questa stagione.
-              }
-            </p>
-          }
+            @for (row of filtered(); track row.fanta_player_id; let i = $index) {
+              <div class="player-row">
+                <span class="row-num text-muted">{{ i + 1 }}</span>
+                @for (col of columns(); track col.field) {
+                  <span [style.flex]="col.field === 'player_name' ? '1' : null"
+                        [style.width]="col.field === 'player_name' ? null : '80px'"
+                        [style.text-align]="col.field === 'player_name' ? null : 'right'"
+                        [style.font-weight]="col.field === 'player_name' ? '600' : null">
+                    {{ row[col.field] ?? '—' }}
+                  </span>
+                }
+              </div>
+            }
+            @empty {
+              <p class="text-muted" style="padding:20px;">
+                @if (selectedSeasonId === currentSeasonId()) {
+                  Nessun dato per questa stagione. Usa "Importa da Fantacalcio" per scaricarli.
+                } @else if (isArchiveOnlySeason() && dataType !== 'stats') {
+                  {{ dataType === 'prices' ? 'Le quotazioni' : 'I voti per giornata' }} non sono disponibili per questa stagione storica: è disponibile solo la scheda Statistiche.
+                } @else {
+                  Nessun dato per questa stagione.
+                }
+              </p>
+            }
+          </div>
         </div>
       }
     </div>
@@ -172,16 +174,19 @@ const VOTES_COLUMNS = [
     .status-msg.error { color: var(--text-negative, #e05260); }
 
     .player-table { padding: 0; overflow: hidden; }
+    .table-scroll { overflow-x: auto; }
     .table-header {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 16px; font-size: 11px; font-weight: 700;
       color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em;
       border-bottom: 1px solid var(--border-color);
+      min-width: 900px;
     }
     .player-row {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 16px; border-bottom: 1px solid var(--border-subtle);
       font-size: 13px;
+      min-width: 900px;
     }
     .player-row:hover { background: var(--bg-elevated); }
     .row-num { width: 40px; font-size: 12px; }
