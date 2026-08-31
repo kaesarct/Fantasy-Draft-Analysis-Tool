@@ -5,8 +5,11 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.fanta_allenatore import FantaAllenatore
 from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaRoster, League, FantaTeamLineage
-from app.models.competition import Competition, CompetitionStanding
+from app.models.competition import (
+    Competition, CompetitionStanding, MatchResult, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase,
+)
 from app.services.auth_service import require_admin
+from app.routers.league import MAIN_LEAGUE_TYPES
 from app.routers.team_merge import _SIMPLE_TABLES, _UNIQUE_TABLES
 
 router = APIRouter(tags=["teams"])
@@ -85,6 +88,138 @@ def update_allenatore(al_id: int, data: AllenatoreUpdate, db: Session = Depends(
     return {"id": a.id, "username": a.username, "display_name": a.display_name, "is_active": a.is_active}
 
 
+def _group_rank_for_team(
+    db: Session, comp: Competition, matches: list[MatchResult], team_id: int
+) -> dict | None:
+    """Piazzamento nel proprio girone (stessa logica di get_competition_bracket
+    in league.py) — usato solo come ripiego quando una coppa non ha ancora
+    nessuna partita a eliminazione diretta (fase a gironi in corso)."""
+    group_link = (
+        db.query(CompetitionGroupTeam)
+        .join(CompetitionGroup, CompetitionGroup.id == CompetitionGroupTeam.group_id)
+        .filter(CompetitionGroup.competition_id == comp.id, CompetitionGroupTeam.fanta_team_id == team_id)
+        .first()
+    )
+    if not group_link:
+        return None
+    group_team_ids = {
+        row[0] for row in db.query(CompetitionGroupTeam.fanta_team_id)
+        .filter(CompetitionGroupTeam.group_id == group_link.group_id)
+    }
+    stats = {tid: {"pts": 0, "gf": 0, "ga": 0} for tid in group_team_ids}
+    for m in matches:
+        if m.phase != CompetitionPhase.GROUP:
+            continue
+        if m.fanta_team_home_id not in group_team_ids or m.fanta_team_away_id not in group_team_ids:
+            continue
+        h, a = stats[m.fanta_team_home_id], stats[m.fanta_team_away_id]
+        h["gf"] += m.goals_home; h["ga"] += m.goals_away
+        a["gf"] += m.goals_away; a["ga"] += m.goals_home
+        h["pts"] += m.pts_home; a["pts"] += m.pts_away
+    ranked = sorted(
+        group_team_ids,
+        key=lambda tid: (stats[tid]["pts"], stats[tid]["gf"] - stats[tid]["ga"], stats[tid]["gf"]),
+        reverse=True,
+    )
+    return {"rank": ranked.index(team_id) + 1, "total_teams": len(ranked)}
+
+
+def _cup_standing_for_team(db: Session, comp: Competition, team_id: int) -> dict | None:
+    """Piazzamento sintetico per una coppa (gironi + eliminazione diretta),
+    calcolato al volo dai MatchResult — usato quando la competizione non ha
+    righe CompetitionStanding salvate (il caso normale per Ciempions/UEFA/
+    Coppa Italia/Eurocup: il tabellone si calcola sempre dal vivo, mai
+    persistito in classifica, vedi get_competition_bracket in league.py).
+
+    Convenzione di piazzamento per l'eliminazione diretta (nessun dato
+    "ufficiale" esiste per una graduatoria di coppa, quindi ne serve una
+    convenzionale): vincitore=1°, finalista perdente=2°, poi a scalare a pari
+    merito per fase persa (semifinalisti, quartifinalisti, ecc.); chi non ha
+    mai raggiunto l'eliminazione diretta resta a pari merito subito sotto
+    l'ultima fase conosciuta. total_teams = tutte le squadre della coppa
+    (gironi + eliminazione), non solo il proprio girone."""
+    matches = db.query(MatchResult).filter(MatchResult.competition_id == comp.id).all()
+    if not matches:
+        return None
+
+    all_team_ids: set[int] = set()
+    for m in matches:
+        all_team_ids.add(m.fanta_team_home_id)
+        all_team_ids.add(m.fanta_team_away_id)
+    for row in (
+        db.query(CompetitionGroupTeam.fanta_team_id)
+        .join(CompetitionGroup, CompetitionGroup.id == CompetitionGroupTeam.group_id)
+        .filter(CompetitionGroup.competition_id == comp.id)
+    ):
+        all_team_ids.add(row[0])
+
+    if team_id not in all_team_ids:
+        return None
+    total_teams = len(all_team_ids)
+
+    knockout_matches = [m for m in matches if m.phase != CompetitionPhase.GROUP]
+    phase_order = [
+        CompetitionPhase.ROUND_OF_16, CompetitionPhase.QUARTER_FINAL,
+        CompetitionPhase.SEMI_FINAL, CompetitionPhase.FINAL,
+    ]
+
+    # Ultima fase raggiunta da ogni squadra (viene sovrascritta a ogni fase
+    # superata, quindi a fine ciclo contiene la fase più avanzata di ognuna).
+    last_phase: dict[int, CompetitionPhase] = {}
+    won_final: dict[int, bool] = {}
+    for phase in phase_order:
+        ties: dict[frozenset, dict] = {}
+        for m in knockout_matches:
+            if m.phase != phase:
+                continue
+            key = frozenset((m.fanta_team_home_id, m.fanta_team_away_id))
+            goals = ties.setdefault(key, {})
+            goals[m.fanta_team_home_id] = goals.get(m.fanta_team_home_id, 0) + m.goals_home
+            goals[m.fanta_team_away_id] = goals.get(m.fanta_team_away_id, 0) + m.goals_away
+        for key, goals in ties.items():
+            for tid in key:
+                last_phase[tid] = phase
+            if phase == CompetitionPhase.FINAL and len(key) == 2:
+                a, b = tuple(key)
+                if goals.get(a, 0) != goals.get(b, 0):
+                    winner = a if goals.get(a, 0) > goals.get(b, 0) else b
+                    won_final[winner] = True
+
+    if not last_phase:
+        # Nessuna partita a eliminazione diretta ancora giocata: usa il
+        # piazzamento nel proprio girone invece di dichiarare tutti "1°".
+        return _group_rank_for_team(db, comp, matches, team_id)
+
+    rank_by_team: dict[int, int] = {}
+    cumulative = 0
+    for phase in reversed(phase_order):
+        teams_in_phase = [tid for tid, p in last_phase.items() if p == phase]
+        if not teams_in_phase:
+            continue
+        if phase == CompetitionPhase.FINAL:
+            winner = next((tid for tid in teams_in_phase if won_final.get(tid)), None)
+            others = [tid for tid in teams_in_phase if tid != winner]
+            if winner is not None:
+                rank_by_team[winner] = 1
+                cumulative = 1
+            if others:
+                tier_rank = cumulative + 1
+                for tid in others:
+                    rank_by_team[tid] = tier_rank
+                cumulative += len(others)
+        else:
+            tier_rank = cumulative + 1
+            for tid in teams_in_phase:
+                rank_by_team[tid] = tier_rank
+            cumulative += len(teams_in_phase)
+
+    if team_id in rank_by_team:
+        return {"rank": rank_by_team[team_id], "total_teams": total_teams}
+    # Mai arrivata all'eliminazione diretta: pari merito subito sotto l'ultima
+    # fase conosciuta (es. sotto gli ottavi, se esistono).
+    return {"rank": cumulative + 1, "total_teams": total_teams}
+
+
 def _team_standings_summary(db: Session, team: FantaTeam) -> list[dict]:
     """Piazzamento di una squadra in ciascuna competizione a cui ha
     partecipato (ultima giornata registrata). is_partial_data=True quando
@@ -92,20 +227,21 @@ def _team_standings_summary(db: Session, team: FantaTeam) -> list[dict]:
     che quella stagione non ha una classifica reale, solo un piazzamento
     noto (es. solo il vincitore) inserito come valore puramente ordinale —
     le altre posizioni in quel caso non sono da considerare affidabili."""
+    result = []
+    seen_comp_ids: set[int] = set()
+
     standings = db.query(CompetitionStanding).filter(CompetitionStanding.fanta_team_id == team.id).all()
-    if not standings:
-        return []
     latest_by_comp: dict[int, CompetitionStanding] = {}
     for s in standings:
         cur = latest_by_comp.get(s.competition_id)
         if not cur or s.match_day > cur.match_day:
             latest_by_comp[s.competition_id] = s
 
-    result = []
     for comp_id, s in latest_by_comp.items():
         comp = db.query(Competition).filter(Competition.id == comp_id).first()
         if not comp:
             continue
+        seen_comp_ids.add(comp_id)
         all_rows = db.query(CompetitionStanding).filter(
             CompetitionStanding.competition_id == comp_id,
             CompetitionStanding.match_day == s.match_day,
@@ -120,6 +256,29 @@ def _team_standings_summary(db: Session, team: FantaTeam) -> list[dict]:
             "total_teams": len(ranked),
             "is_partial_data": all((r.played or 0) == 0 for r in all_rows),
         })
+
+    # Coppe senza CompetitionStanding salvata (il caso normale: il tabellone
+    # di Ciempions/UEFA/Coppa Italia/Eurocup si calcola sempre al volo dai
+    # MatchResult, mai persistito in classifica) — calcolate qui allo stesso
+    # modo del tabellone live.
+    other_comps = (
+        db.query(Competition)
+        .filter(Competition.season_id == team.season_id, ~Competition.id.in_(seen_comp_ids))
+        .all()
+    )
+    for comp in other_comps:
+        if comp.type in MAIN_LEAGUE_TYPES or comp.type == "SILVER":
+            continue
+        cup_result = _cup_standing_for_team(db, comp, team.id)
+        if cup_result:
+            result.append({
+                "competition_id": comp.id,
+                "competition_type": comp.type,
+                "rank": cup_result["rank"],
+                "total_teams": cup_result["total_teams"],
+                "is_partial_data": False,
+            })
+
     return result
 
 
