@@ -27,6 +27,13 @@ log() {
 
 cd "$REPO_DIR"
 
+# Se un'esecuzione precedente ha toccato i file come un altro utente (es.
+# root via sudo mentre di solito gira come utente normale, o viceversa),
+# git rifiuta di fidarsi della cartella finché non lo autorizzi
+# esplicitamente — lo facciamo qui ad ogni giro, per l'utente che sta
+# effettivamente eseguendo lo script in questo momento.
+git config --global --add safe.directory "$REPO_DIR"
+
 git fetch --tags origin >> "$LOG_FILE" 2>&1
 
 LATEST_TAG="$(git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags | head -1)"
