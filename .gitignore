@@ -13,3 +13,4 @@ backend/session/*.json
 backups/
 .last_deployed_commit
 deploy/deploy.log
+deploy/synoscheduler/
