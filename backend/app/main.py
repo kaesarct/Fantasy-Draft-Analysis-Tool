@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -30,13 +31,17 @@ async def lifespan(app: FastAPI):
         id="daily_sync",
         replace_existing=True,
     )
-    # Scheduler: bollettino infortuni Serie A ogni 3 ore
+    # Scheduler: bollettino infortuni Serie A ogni ora, con la prima
+    # esecuzione subito all'avvio invece che dopo un'ora piena — altrimenti
+    # un riavvio del container (es. dopo un auto-deploy) resetta il timer e
+    # il job può restare silenzioso per ore se i riavvii sono frequenti.
     scheduler.add_job(
         func=_auto_sync_injuries_job,
         trigger="interval",
-        hours=3,
+        hours=1,
         id="injury_sync",
         replace_existing=True,
+        next_run_time=datetime.now(),
     )
     scheduler.start()
     logger.info("Scheduler started")
