@@ -19,7 +19,7 @@ interface NavItem {
       <!-- Barra mobile: solo sotto il breakpoint -->
       <div class="mobile-topbar">
         <button class="hamburger-btn" (click)="mobileMenuOpen.set(true)" aria-label="Apri menu">☰</button>
-        <div class="mobile-topbar-title"><span class="logo-icon">⚽</span> FT Platform</div>
+        <div class="mobile-topbar-title"><img class="logo-icon" src="logo.png" alt="Logo"> FT Platform</div>
       </div>
 
       @if (mobileMenuOpen()) {
@@ -30,7 +30,7 @@ interface NavItem {
       <nav class="sidebar" [class.mobile-open]="mobileMenuOpen()">
         <div class="sidebar-header">
           <div class="logo">
-            <span class="logo-icon">⚽</span>
+            <img class="logo-icon" src="logo.png" alt="Logo">
             <div>
               <div class="logo-title">FT Platform</div>
               <div class="logo-sub">Fantacalcio Tamarros</div>
@@ -99,7 +99,9 @@ interface NavItem {
     }
 
     .logo-icon {
-      font-size: 28px;
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
       filter: drop-shadow(0 0 8px rgba(63,185,80,.5));
     }
 
