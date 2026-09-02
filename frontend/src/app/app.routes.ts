@@ -58,6 +58,11 @@ export const routes: Routes = [
       import('./pages/history/history.component').then(m => m.HistoryComponent),
   },
   {
+    path: 'awards',
+    loadComponent: () =>
+      import('./pages/awards/awards.component').then(m => m.AwardsComponent),
+  },
+  {
     path: 'admin',
     canActivate: [authGuard],
     loadComponent: () =>
@@ -74,6 +79,12 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () =>
       import('./pages/admin-market/admin-market.component').then(m => m.AdminMarketComponent),
+  },
+  {
+    path: 'admin/coerenza-silver',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/admin-silver-check/admin-silver-check.component').then(m => m.AdminSilverCheckComponent),
   },
   {
     path: 'login',

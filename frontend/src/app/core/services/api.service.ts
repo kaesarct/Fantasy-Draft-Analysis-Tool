@@ -380,4 +380,15 @@ export class ApiService {
   removeCompetitionParticipant(compId: number, teamId: number): Observable<any> {
     return this.http.delete(`${this.base}/competitions/${compId}/participants/${teamId}`);
   }
+
+  // ── Premi Goku/Oscar ──────────────────────────────────────────
+  getAwardsOverview(): Observable<any> {
+    return this.http.get<any>(`${this.base}/awards/overview`);
+  }
+
+  getSilverConsistency(seasonId?: number): Observable<any> {
+    let params = new HttpParams();
+    if (seasonId) params = params.set('season_id', seasonId);
+    return this.http.get<any>(`${this.base}/awards/silver-consistency`, { params });
+  }
 }

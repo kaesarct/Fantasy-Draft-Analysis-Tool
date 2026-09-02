@@ -262,6 +262,7 @@ export class AppComponent implements OnInit {
     { label: 'Partite',     route: '/matches',    icon: '📅' },
     { label: 'Infortuni',   route: '/injuries',   icon: '🏥' },
     { label: 'Storico',     route: '/history',    icon: '📊' },
+    { label: 'Goku & Oscar', route: '/awards',    icon: '🏆' },
     { label: 'Admin',       route: '/admin',      icon: '⚙️'  },
     { label: 'Gestione Squadre', route: '/admin/squadre', icon: '🛡️' },
     { label: 'Mercato',     route: '/admin/mercato', icon: '🔄' },

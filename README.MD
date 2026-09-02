@@ -24,6 +24,7 @@ La **Fantacalcio Platform** è una moderna applicazione web full-stack progettat
 - **Gestione Squadre**: Dati fanta-team, loghi stagionali, crediti residui e allenatori multipli per squadra.
 - **Classifiche e Competizioni**: Supporto completo per campionati complessi (Gold, Bronze, Carbon, Silver League, Ciempions, UEFA).
 - **Infortuni e Sostituzioni**: Tracking dei rientri previsti e gestione delle sostituzioni temporanee per infortuni prolungati (≥8 settimane).
+- **Premio Goku & Premio Oscar**: pagina pubblica (nessun login richiesto) con il punteggio più alto/basso di giornata della stagione corrente, lo storico dal 2018/19 e il record assoluto in evidenza. Sotto Admin, una sezione "Coerenza Silver" segnala eventuali discrepanze tra la classifica Silver e quella del campionato di appartenenza (Gold/Bronze/Carbon) di ogni squadra.
 
 ## 🐳 Installazione rapida con Docker (Raccomandata)
 

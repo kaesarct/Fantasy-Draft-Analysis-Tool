@@ -133,3 +133,26 @@ class CompetitionStanding(Base):
 
     competition = relationship("Competition", back_populates="standings")
     fanta_team = relationship("FantaTeam", back_populates="standings")
+
+
+class AwardType(str, enum.Enum):
+    GOKU = "GOKU"     # punteggio più alto della stagione
+    OSCAR = "OSCAR"   # punteggio più basso della stagione
+
+
+class SeasonAward(Base):
+    """Premio Goku/Oscar (punteggio più alto/basso di giornata) per stagione.
+    Storico immutabile inserito una tantum (vedi database.py::_migrate_seed_season_awards);
+    la stagione corrente viene invece calcolata a runtime, non salvata qui."""
+    __tablename__ = "season_awards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    season_label = Column(String(10), nullable=False)   # es. "2019-20"
+    award_type = Column(Enum(AwardType), nullable=False)
+    team_name = Column(String(100), nullable=False)
+    score = Column(Float, nullable=False)
+    detail = Column(String(100), nullable=False)         # es. "17ª giornata" o "semifinale andata Ciempions"
+
+    __table_args__ = (
+        UniqueConstraint("season_label", "award_type", name="uq_season_award"),
+    )

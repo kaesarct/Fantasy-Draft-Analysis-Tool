@@ -59,6 +59,7 @@ def init_db():
     _migrate_backfill_unknown_role()
     _migrate_dedupe_players()
     _migrate_merge_duplicate_teams()
+    _migrate_seed_season_awards()
 
 
 def _migrate_add_lineage_id():
@@ -367,6 +368,48 @@ def _migrate_backfill_fanta_id():
         db.commit()
         if backfilled:
             logger.info("Backfill fanta_id: %s giocatori collegati allo storico", backfilled)
+    finally:
+        db.close()
+
+
+_SEASON_AWARDS_HISTORY = [
+    # (season_label, goku_team, goku_score, goku_detail, oscar_team, oscar_score, oscar_detail)
+    ("2025-26", "Hertavernello", 94.0, "17ª giornata", "Pumas", 52.5, "36ª giornata"),
+    ("2024-25", "CSKA La Rissa", 93.5, "1ª giornata", "Birra Real", 55.5, "4ª giornata"),
+    ("2023-24", "Carrapipi", 100.5, "1ª giornata", "Marlena", 43.5, "semifinale andata Ciempions"),
+    ("2022-23", "Deportivo la Carogna", 96.0, "1ª giornata", "Deportivo la Carogna", 49.5, "38ª giornata"),
+    ("2021-22", "Pettini pe i Tignusi", 94.0, "26ª giornata", "Pumas", 57.0, "24ª giornata"),
+    ("2020-21", "Herta Vernello", 105.5, "32ª giornata", "Fragolina-XL", 53.0, "21ª giornata"),
+    ("2019-20", "Pumas", 100.5, "35ª giornata", "Bestplayerscrew", 56.5, "13ª giornata"),
+    ("2018-19", "Sao Paulo", 95.5, "18ª giornata", "Sao Paulo", 48.5, "11ª giornata"),
+]
+
+
+def _migrate_seed_season_awards():
+    """Seed una tantum dello storico Premio Goku/Oscar (2018-19..2025-26),
+    fornito manualmente dall'utente — non ricavabile dai dati già in DB.
+    Idempotente: salta le stagioni già presenti."""
+    from app.models.competition import SeasonAward, AwardType
+
+    db = SessionLocal()
+    try:
+        existing = {row[0] for row in db.query(SeasonAward.season_label).distinct().all()}
+        seeded = 0
+        for season_label, goku_team, goku_score, goku_detail, oscar_team, oscar_score, oscar_detail in _SEASON_AWARDS_HISTORY:
+            if season_label in existing:
+                continue
+            db.add(SeasonAward(
+                season_label=season_label, award_type=AwardType.GOKU,
+                team_name=goku_team, score=goku_score, detail=goku_detail,
+            ))
+            db.add(SeasonAward(
+                season_label=season_label, award_type=AwardType.OSCAR,
+                team_name=oscar_team, score=oscar_score, detail=oscar_detail,
+            ))
+            seeded += 1
+        db.commit()
+        if seeded:
+            logger.info("Seed storico Premio Goku/Oscar: %s stagioni inserite", seeded)
     finally:
         db.close()
 

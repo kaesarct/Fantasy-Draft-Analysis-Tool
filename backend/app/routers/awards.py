@@ -1,0 +1,182 @@
+"""Premio Goku/Oscar (punteggio più alto/basso di giornata) e coerenza Silver."""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.season import Season
+from app.models.competition import Competition, CompetitionStanding, CompetitionType, SeasonAward
+from app.models.fanta_team import FantaTeam, League
+from app.services.auth_service import require_admin
+
+router = APIRouter(tags=["awards"])
+
+# Silver esclusa: deve limitarsi a rispecchiare il campionato di appartenenza
+# (Gold/Bronze/Carbon), non va sommata a parte per non duplicare i punteggi.
+_AWARD_COMPETITION_TYPES = [
+    "GOLD", "BRONZE", "CARBON", "CIEMPIONS", "UEFA", "COPPA_ITALIA", "EURO_CUP",
+]
+
+_SILVER_TOLERANCE = 0.01
+
+
+def _matchday_scores(db: Session, season_id: int, comp_types: list[str]) -> list[dict]:
+    """Punteggio di ogni squadra per singola giornata/partita, ricavato come
+    differenza tra il `total_score` cumulato ("Pt. Totali", il fantapunteggio
+    di squadra — non va confuso con `goals_for`, i gol calcolati dalle fasce)
+    di due righe CompetitionStanding consecutive (stessa competizione, stessa
+    squadra). E' un ripiego: oggi non esiste un flusso che scriva un
+    punteggio di giornata singola per la stagione corrente, solo l'editor
+    classifica cumulativa in Gestione Squadre (vedi PUT /competitions/{id}/standings)."""
+    rows = (
+        db.query(CompetitionStanding, Competition.type, FantaTeam.name)
+        .join(Competition, Competition.id == CompetitionStanding.competition_id)
+        .join(FantaTeam, FantaTeam.id == CompetitionStanding.fanta_team_id)
+        .filter(Competition.season_id == season_id, Competition.type.in_(comp_types))
+        .order_by(
+            CompetitionStanding.competition_id,
+            CompetitionStanding.fanta_team_id,
+            CompetitionStanding.match_day,
+        )
+        .all()
+    )
+
+    performances = []
+    prev_key = None
+    prev_cumulative = 0.0
+    for standing, comp_type, team_name in rows:
+        key = (standing.competition_id, standing.fanta_team_id)
+        if key != prev_key:
+            prev_cumulative = 0.0
+        delta = round(standing.total_score - prev_cumulative, 2)
+        performances.append({
+            "fanta_team_id": standing.fanta_team_id,
+            "fanta_team_name": team_name,
+            "competition_type": comp_type.value if hasattr(comp_type, "value") else comp_type,
+            "match_day": standing.match_day,
+            "score": delta,
+        })
+        prev_cumulative = standing.total_score
+        prev_key = key
+    return performances
+
+
+def _absolute_record(
+    history: list[dict], current_performances: list[dict], award_type: str,
+    current_season_label: str | None, pick_max: bool,
+) -> dict | None:
+    hist_rows = [h for h in history if h["award_type"] == award_type]
+    candidates = []
+    if hist_rows:
+        best_hist = (max if pick_max else min)(hist_rows, key=lambda h: h["score"])
+        candidates.append({
+            "source": "storico", "season_label": best_hist["season_label"],
+            "team_name": best_hist["team_name"], "score": best_hist["score"], "detail": best_hist["detail"],
+        })
+    if current_performances:
+        best_current = (max if pick_max else min)(current_performances, key=lambda p: p["score"])
+        candidates.append({
+            "source": "stagione_corrente", "season_label": current_season_label,
+            "team_name": best_current["fanta_team_name"], "score": best_current["score"],
+            "detail": f"{best_current['competition_type']} — {best_current['match_day']}ª giornata",
+        })
+    if not candidates:
+        return None
+    return (max if pick_max else min)(candidates, key=lambda c: c["score"])
+
+
+@router.get("/awards/overview")
+def get_awards_overview(db: Session = Depends(get_db)):
+    current_season = db.query(Season).filter(Season.is_current == True).first()
+    current_season_label = current_season.label if current_season else None
+
+    goku_current: list[dict] = []
+    oscar_current: list[dict] = []
+    if current_season:
+        performances = _matchday_scores(db, current_season.id, _AWARD_COMPETITION_TYPES)
+        if performances:
+            max_score = max(p["score"] for p in performances)
+            min_score = min(p["score"] for p in performances)
+            goku_current = [p for p in performances if p["score"] == max_score]
+            oscar_current = [p for p in performances if p["score"] == min_score]
+
+    history = [
+        {
+            "season_label": a.season_label,
+            "award_type": a.award_type.value if hasattr(a.award_type, "value") else a.award_type,
+            "team_name": a.team_name, "score": a.score, "detail": a.detail,
+        }
+        for a in db.query(SeasonAward).order_by(SeasonAward.season_label.desc()).all()
+    ]
+
+    return {
+        "current_season_label": current_season_label,
+        "goku_current": goku_current,
+        "oscar_current": oscar_current,
+        "history": history,
+        "absolute_goku": _absolute_record(history, goku_current, "GOKU", current_season_label, pick_max=True),
+        "absolute_oscar": _absolute_record(history, oscar_current, "OSCAR", current_season_label, pick_max=False),
+    }
+
+
+@router.get("/awards/silver-consistency")
+def get_silver_consistency(
+    season_id: int | None = None, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    season = (
+        db.query(Season).filter(Season.id == season_id).first()
+        if season_id else
+        db.query(Season).filter(Season.is_current == True).first()
+    )
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+
+    silver_comp = db.query(Competition).filter(
+        Competition.season_id == season.id, Competition.type == CompetitionType.SILVER
+    ).first()
+
+    discrepancies = []
+    for team in db.query(FantaTeam).filter(FantaTeam.season_id == season.id):
+        league = db.query(League).filter(League.id == team.league_id).first()
+        if not league:
+            continue
+        level = league.level.value if hasattr(league.level, "value") else league.level
+        league_comp = db.query(Competition).filter(
+            Competition.season_id == season.id, Competition.type == level
+        ).first()
+        if not league_comp:
+            continue
+
+        league_by_day = {
+            s.match_day: s.total_score
+            for s in db.query(CompetitionStanding).filter(
+                CompetitionStanding.competition_id == league_comp.id,
+                CompetitionStanding.fanta_team_id == team.id,
+            )
+        }
+        silver_by_day = {}
+        if silver_comp:
+            silver_by_day = {
+                s.match_day: s.total_score
+                for s in db.query(CompetitionStanding).filter(
+                    CompetitionStanding.competition_id == silver_comp.id,
+                    CompetitionStanding.fanta_team_id == team.id,
+                )
+            }
+
+        for match_day in sorted(set(league_by_day) | set(silver_by_day)):
+            league_value = league_by_day.get(match_day)
+            silver_value = silver_by_day.get(match_day)
+            if league_value is None:
+                kind = "missing_league"
+            elif silver_value is None:
+                kind = "missing_silver"
+            elif abs(league_value - silver_value) > _SILVER_TOLERANCE:
+                kind = "mismatch"
+            else:
+                continue
+            discrepancies.append({
+                "fanta_team_id": team.id, "fanta_team_name": team.name, "match_day": match_day,
+                "league_type": level, "league_value": league_value, "silver_value": silver_value,
+                "kind": kind,
+            })
+
+    return {"season_label": season.label, "discrepancies": discrepancies}

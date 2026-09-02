@@ -9,7 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
 from app.database import init_db
-from app.routers import players, teams, league, injuries, matches, sync, history, serie_a_injuries, auth, player_merge, team_merge, trades, winter_market, player_stats_archive
+from app.routers import players, teams, league, injuries, matches, sync, history, serie_a_injuries, auth, player_merge, team_merge, trades, winter_market, player_stats_archive, awards
 
 logging.basicConfig(level=settings.log_level.upper())
 logger = logging.getLogger(__name__)
@@ -123,6 +123,7 @@ app.include_router(team_merge.router, prefix=API_PREFIX)
 app.include_router(trades.router, prefix=API_PREFIX)
 app.include_router(winter_market.router, prefix=API_PREFIX)
 app.include_router(player_stats_archive.router, prefix=API_PREFIX)
+app.include_router(awards.router, prefix=API_PREFIX)
 
 
 @app.get("/api/health")
