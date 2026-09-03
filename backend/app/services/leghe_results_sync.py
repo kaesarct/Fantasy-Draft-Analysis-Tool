@@ -14,6 +14,7 @@ from app.models.competition import Competition, CompetitionPhase, MatchResult
 from app.models.fanta_team import FantaTeam
 from app.models.season import Season
 from app.services.leghe_client import LegheClient
+from app.services.leghe_competition_sync import missing_competition_types
 
 GIORNATA_RE = re.compile(r"(\d+)ª\s+Giornata\s+lega", re.IGNORECASE)
 GOALS_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
@@ -103,6 +104,13 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
     client = LegheClient()
     client.login()
 
+    all_leghe_comps = client.list_competitions()
+    report = {
+        t: {"error": "competizione non ancora creata — creala da Gestione Squadre"}
+        for t in missing_competition_types(db, season, all_leghe_comps)
+        if t != "SILVER"  # mai coperta da questa sync, vedi commento sotto
+    }
+
     query = db.query(Competition).filter(
         Competition.season_id == season.id,
         Competition.leghe_id.isnot(None),
@@ -115,7 +123,6 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
     if comp_types:
         query = query.filter(Competition.type.in_(comp_types))
 
-    report = {}
     for comp in query.all():
         comp_type = comp.type.value if hasattr(comp.type, "value") else comp.type
         try:

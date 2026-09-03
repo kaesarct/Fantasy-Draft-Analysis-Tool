@@ -44,3 +44,23 @@ def sync_competition_leghe_ids(db: Session, season: Season, client: LegheClient 
     client = client or LegheClient()
     client.login()
     return apply_competition_list(db, season, client.list_competitions())
+
+
+def missing_competition_types(db: Session, season: Season, leghe_competitions: list[dict]) -> list[str]:
+    """Tipi di competizione gia' attivi su leghe.fantacalcio.it ma senza
+    ancora una Competition nostra per la stagione (va creata a mano da
+    Gestione Squadre — sync-results/sync-matchday-scores non le creano mai).
+    Usata per segnalarle esplicitamente nel report invece di ometterle in
+    silenzio (facile scambiare "nessun dato" per "sync non riuscita")."""
+    available_types = set()
+    for comp in leghe_competitions:
+        raw_name = (comp.get("name") or "").strip().upper()
+        comp_type = NAME_MAP.get(raw_name, raw_name)
+        if comp_type in KNOWN_TYPES:
+            available_types.add(comp_type)
+
+    existing_types = {
+        c.type.value if hasattr(c.type, "value") else c.type
+        for c in db.query(Competition).filter(Competition.season_id == season.id)
+    }
+    return sorted(available_types - existing_types)

@@ -14,6 +14,7 @@ from app.models.fanta_team import FantaTeam
 from app.models.season import Season
 from app.services.fanta_client import fanta_client
 from app.services.leghe_client import LegheClient
+from app.services.leghe_competition_sync import missing_competition_types
 
 
 def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | None = None) -> dict:
@@ -21,7 +22,13 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
     client.login()
     last_matchday = fanta_client.get_last_matchday()
 
-    leghe_comps = {c["id"]: c for c in client.list_competitions()}
+    all_leghe_comps = client.list_competitions()
+    leghe_comps = {c["id"]: c for c in all_leghe_comps}
+
+    report = {
+        t: {"error": "competizione non ancora creata — creala da Gestione Squadre"}
+        for t in missing_competition_types(db, season, all_leghe_comps)
+    }
 
     query = db.query(Competition).filter(
         Competition.season_id == season.id, Competition.leghe_id.isnot(None)
@@ -29,7 +36,6 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
     if comp_types:
         query = query.filter(Competition.type.in_(comp_types))
 
-    report = {}
     for comp in query.all():
         comp_type = comp.type.value if hasattr(comp.type, "value") else comp.type
         leghe_comp = leghe_comps.get(comp.leghe_id)
