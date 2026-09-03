@@ -15,7 +15,7 @@ from app.services.leghe_client import LegheClient
 from app.services.leghe_competition_sync import apply_competition_list
 from app.services.leghe_results_sync import sync_results
 from app.services.leghe_lineup_scores_sync import sync_matchday_scores
-from app.routers.league import MAIN_LEAGUE_TYPES
+from app.routers.league import MAIN_LEAGUE_TYPES, _ensure_league_and_competition
 
 router = APIRouter(prefix="/leghe-sync", tags=["leghe-sync"])
 
@@ -170,14 +170,15 @@ def apply_leghe_sync(
                     raise ValueError(
                         f"{team_decision.leghe_team_name}: campionato mancante, non posso creare la squadra"
                     )
+                # Crea lega + competizione se mancano ancora (caso normale a
+                # inizio stagione, prima che l'admin le crei a mano altrove):
+                # stessa logica gia' usata da POST /competitions e da
+                # conclude_season, cosi' non serve un passaggio manuale extra
+                # prima di poter creare la prima squadra dell'anno.
+                _ensure_league_and_competition(db, season, team_decision.league_level)
                 league = db.query(League).filter(
                     League.season_id == season.id, League.level == team_decision.league_level
                 ).first()
-                if not league:
-                    raise ValueError(
-                        f"{team_decision.leghe_team_name}: lega {team_decision.league_level} "
-                        "non trovata per questa stagione"
-                    )
                 team = FantaTeam(
                     name=team_decision.leghe_team_name, season_id=season.id, league_id=league.id
                 )

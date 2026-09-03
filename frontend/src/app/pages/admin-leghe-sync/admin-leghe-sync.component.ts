@@ -309,7 +309,6 @@ export class AdminLegheSyncComponent implements OnInit {
     if (!this.selectedSeasonId) return;
     this.loading.set(true);
     this.error.set('');
-    this.report.set(null);
     this.api.getLeghePreview(this.selectedSeasonId).subscribe({
       next: res => {
         this.preview.set(res);
