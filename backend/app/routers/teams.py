@@ -57,7 +57,7 @@ def list_allenatori(db: Session = Depends(get_db)):
 
 
 @allenatori_router.post("", status_code=201)
-def create_allenatore(data: AllenatoreCreate, db: Session = Depends(get_db)):
+def create_allenatore(data: AllenatoreCreate, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     username = data.username.strip()
     if not username or not data.display_name.strip():
         raise HTTPException(400, "username e display_name sono obbligatori")

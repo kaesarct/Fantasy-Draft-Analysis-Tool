@@ -51,6 +51,9 @@ class FantaTeam(Base):
     season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False)
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False)
     lineage_id = Column(Integer, ForeignKey("fanta_team_lineages.id"), nullable=True)
+    # Id squadra su leghe.fantacalcio.it — collegato a mano una volta l'anno
+    # (vedi POST /leghe-sync/apply), serve per le future sync automatiche.
+    leghe_team_id = Column(Integer, nullable=True)
     credits_spent = Column(Float, default=0.0)
     remaining_credits = Column(Float, default=350.0)
     # Palmarès come lista JSON serializzata (badge type list)

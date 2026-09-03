@@ -391,4 +391,14 @@ export class ApiService {
     if (seasonId) params = params.set('season_id', seasonId);
     return this.http.get<any>(`${this.base}/awards/silver-consistency`, { params });
   }
+
+  // ── Sync squadre/allenatori leghe.fantacalcio.it ────────────────
+  getLeghePreview(seasonId: number): Observable<any> {
+    const params = new HttpParams().set('season_id', seasonId);
+    return this.http.get<any>(`${this.base}/leghe-sync/participants`, { params });
+  }
+
+  applyLegheSync(payload: any): Observable<any> {
+    return this.http.post<any>(`${this.base}/leghe-sync/apply`, payload);
+  }
 }

@@ -266,6 +266,8 @@ export class AppComponent implements OnInit {
     { label: 'Admin',       route: '/admin',      icon: '⚙️'  },
     { label: 'Gestione Squadre', route: '/admin/squadre', icon: '🛡️' },
     { label: 'Mercato',     route: '/admin/mercato', icon: '🔄' },
+    { label: 'Coerenza Silver', route: '/admin/coerenza-silver', icon: '⚖️' },
+    { label: 'Sync leghe.fc.it', route: '/admin/leghe-sync', icon: '🔗' },
   ];
 
   version = signal('…');

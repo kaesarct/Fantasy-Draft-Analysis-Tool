@@ -134,6 +134,19 @@ class LegheClient:
         resp.raise_for_status()
         return resp.json().get("home")
 
+    def get_participants(self) -> list[dict]:
+        """Tutti i partecipanti della lega (squadre + allenatori con email/codice
+        invito): usato per il collegamento manuale annuale in Admin
+        (POST /leghe-sync/apply), non per sync automatiche."""
+        resp = requests.get(
+            f"{self.APILEAGUE_BASE}/onboarding/v1/invitation/participants",
+            params={"pageNumber": 1, "pageSize": 1000},
+            headers=self._lega_headers(),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def get_tutte_le_formazioni(self, giornata: int) -> dict:
         """Formazioni di tutte le competizioni della lega per la giornata data.
         Ritorna {slug_competizione: {"id_comp", "giornata", "dati": {nome_squadra: lineup}} | None}

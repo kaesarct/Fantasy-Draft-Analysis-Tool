@@ -87,6 +87,12 @@ export const routes: Routes = [
       import('./pages/admin-silver-check/admin-silver-check.component').then(m => m.AdminSilverCheckComponent),
   },
   {
+    path: 'admin/leghe-sync',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/admin-leghe-sync/admin-leghe-sync.component').then(m => m.AdminLegheSyncComponent),
+  },
+  {
     path: 'login',
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),

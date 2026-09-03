@@ -47,6 +47,7 @@ def init_db():
     _migrate_add_trade_roster_ids()
     _migrate_add_roster_role()
     _migrate_add_leghe_id()
+    _migrate_add_leghe_team_id()
     _migrate_widen_secondary_role()
     _migrate_widen_price_secondary_role()
     # L'ordine conta: normalizzare prima uniforma le eventuali coppie duplicate
@@ -111,6 +112,22 @@ def _migrate_add_leghe_id():
     with engine.begin() as conn:
         conn.execute(text(
             "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS leghe_id INTEGER"
+        ))
+
+
+def _migrate_add_leghe_team_id():
+    # create_all non altera tabelle esistenti: la colonna va aggiunta a mano
+    # sui DB gia' creati (idempotente grazie a IF NOT EXISTS). L'indice unico
+    # e' parziale (solo valori non-null) per permettere piu' squadre non
+    # ancora collegate senza violare l'unicita'.
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE fanta_teams ADD COLUMN IF NOT EXISTS leghe_team_id INTEGER"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_fanta_team_leghe_team_id "
+            "ON fanta_teams(leghe_team_id) WHERE leghe_team_id IS NOT NULL"
         ))
 
 
