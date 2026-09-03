@@ -8,6 +8,7 @@ from app.models.player import Player, PlayerSnapshot, PlayerMatchScore
 from app.models.serie_a_team import SerieATeam
 from app.models.serie_a_injury import SerieAInjuryReport, SerieAInjuryArchive, SerieAInjuryDescription
 from app.models.season import Season
+from app.services.leghe_competition_sync import sync_competition_leghe_ids
 
 import logging
 logger = logging.getLogger(__name__)
@@ -130,6 +131,18 @@ def sync_votes(db: Session, season_id: int, match_day: int | None = None) -> dic
         saved += 1
 
     db.commit()
+
+    # Ricontrollo best-effort: UEFA (e altre coppe) vengono create su
+    # leghe.fantacalcio.it solo a stagione inoltrata (es. UEFA a fine gironi
+    # Ciempions) — un errore qui (login leghe fallito, competizione ancora
+    # assente) non deve far fallire il sync voti, che e' il suo scopo primario.
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if season:
+        try:
+            sync_competition_leghe_ids(db, season)
+        except Exception as e:
+            logger.warning("Aggancio Competition.leghe_id fallito (non bloccante): %s", e)
+
     return {"ok": True, "saved": saved, "match_day": day}
 
 

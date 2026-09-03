@@ -12,6 +12,7 @@ from app.models.fanta_team import FantaTeam, FantaTeamCoach, League
 from app.models.fanta_allenatore import FantaAllenatore
 from app.services.auth_service import require_admin
 from app.services.leghe_client import LegheClient
+from app.services.leghe_competition_sync import apply_competition_list
 from app.routers.league import MAIN_LEAGUE_TYPES
 
 router = APIRouter(prefix="/leghe-sync", tags=["leghe-sync"])
@@ -36,13 +37,20 @@ def get_leghe_participants(
     # competizioni principali portano gia' l'elenco squadre in "tmids",
     # nessuna chiamata aggiuntiva necessaria. Coppe/Silver condividono lo
     # stesso roster quindi non servono per determinare il campionato.
+    leghe_competitions = client.list_competitions()
     team_level: dict[int, str] = {}
-    for comp in client.list_competitions():
+    for comp in leghe_competitions:
         level = comp.get("name", "").strip().upper()
         if level not in MAIN_LEAGUE_TYPES:
             continue
         for team_id in comp.get("tmids") or []:
             team_level[team_id] = level
+
+    # Aggancia anche gli id leghe.fantacalcio.it delle Competition gia'
+    # esistenti da noi (es. UEFA, creata su leghe solo a fine gironi Ciempions
+    # e quindi spesso ancora assente qui): stessa chiamata gia' fatta sopra,
+    # nessun costo aggiuntivo.
+    competitions_linked = apply_competition_list(db, season, leghe_competitions)
 
     participants = client.get_participants()
 
@@ -87,6 +95,7 @@ def get_leghe_participants(
             {"id": a.id, "display_name": a.display_name, "email": a.email} for a in our_allenatori
         ],
         "participants": result,
+        "competitions_linked": competitions_linked,
     }
 
 
