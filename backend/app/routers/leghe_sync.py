@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
-from app.models.fanta_team import FantaTeam, FantaTeamCoach, League
+from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaTeamLineage, League
 from app.models.fanta_allenatore import FantaAllenatore
 from app.services.auth_service import require_admin
 from app.services.leghe_client import LegheClient
@@ -62,11 +62,28 @@ def get_leghe_participants(
     our_allenatori = db.query(FantaAllenatore).order_by(FantaAllenatore.display_name).all()
     our_allenatori_by_email = {a.email.lower(): a for a in our_allenatori if a.email}
 
+    # Squadre di stagioni passate: per una stagione appena creata (senza
+    # ancora nessuna FantaTeam propria, es. conclude_season mai lanciato) e'
+    # qui che si trova "la squadra storica" a cui agganciare il lineage della
+    # nuova riga — la ricerca per nome nella sola stagione corrente sopra
+    # sarebbe sempre vuota in quel caso.
+    historical_rows = (
+        db.query(FantaTeam, Season.label, Season.year_start)
+        .join(Season, Season.id == FantaTeam.season_id)
+        .filter(FantaTeam.season_id != season_id)
+        .order_by(Season.year_start.desc(), FantaTeam.name)
+        .all()
+    )
+    historical_by_name: dict[str, FantaTeam] = {}
+    for t, _label, _year in historical_rows:
+        historical_by_name.setdefault(_normalize(t.name), t)  # prima occorrenza = stagione piu' recente
+
     result = []
     for p in participants:
         leghe_team_id = p["teamId"]
         already_linked = our_teams_by_leghe_id.get(leghe_team_id)
         suggested_team = already_linked or our_teams_by_name.get(_normalize(p["teamName"]))
+        suggested_lineage_team = None if suggested_team else historical_by_name.get(_normalize(p["teamName"]))
 
         coaches = []
         for c in p.get("coaches") or []:
@@ -85,6 +102,7 @@ def get_leghe_participants(
             "league_level": team_level.get(leghe_team_id),
             "already_linked_team_id": already_linked.id if already_linked else None,
             "suggested_fanta_team_id": suggested_team.id if suggested_team else None,
+            "suggested_lineage_team_id": suggested_lineage_team.id if suggested_lineage_team else None,
             "coaches": coaches,
         })
 
@@ -92,6 +110,10 @@ def get_leghe_participants(
         "season_label": season.label,
         "our_teams": [
             {"id": t.id, "name": t.name, "leghe_team_id": t.leghe_team_id} for t in our_teams
+        ],
+        "historical_teams": [
+            {"id": t.id, "name": t.name, "season_label": label}
+            for t, label, _year in historical_rows
         ],
         "our_allenatori": [
             {"id": a.id, "display_name": a.display_name, "email": a.email} for a in our_allenatori
@@ -115,6 +137,7 @@ class TeamDecision(BaseModel):
     league_level: str | None = None
     fanta_team_id: int | None = None
     create_new: bool = False
+    lineage_source_team_id: int | None = None  # squadra storica da cui ereditare il lineage
     new_name: str | None = None
     update_name: bool = False
     coaches: list[CoachDecision] = []
@@ -158,6 +181,20 @@ def apply_leghe_sync(
                 team = FantaTeam(
                     name=team_decision.leghe_team_name, season_id=season.id, league_id=league.id
                 )
+                if team_decision.lineage_source_team_id:
+                    source = db.query(FantaTeam).filter(
+                        FantaTeam.id == team_decision.lineage_source_team_id
+                    ).first()
+                    if not source:
+                        raise ValueError(
+                            f"{team_decision.leghe_team_name}: squadra storica selezionata non trovata"
+                        )
+                    if not source.lineage_id:
+                        lineage = FantaTeamLineage()
+                        db.add(lineage)
+                        db.flush()
+                        source.lineage_id = lineage.id
+                    team.lineage_id = source.lineage_id
                 db.add(team)
                 db.flush()
                 report["teams_created"] += 1

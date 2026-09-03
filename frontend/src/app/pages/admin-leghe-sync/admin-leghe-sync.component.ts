@@ -19,6 +19,7 @@ interface CoachDecisionState {
 interface TeamDecisionState {
   fantaTeamId: number | null;
   createNew: boolean;
+  historicalTeamId: number | null;
   newName: string;
   updateName: boolean;
   primaryLegheCoachId: number | null;
@@ -154,7 +155,26 @@ function slugUsername(name: string): string {
                     appendTo="body"
                     styleClass="team-drop"
                   />
+                  @if (!teamOptions().length) {
+                    <span class="text-muted" style="font-size:11px">nessuna squadra ancora presente in questa stagione</span>
+                  }
                 }
+              </div>
+            }
+
+            @if (decisions[team.leghe_team_id].createNew) {
+              <div class="team-link-row">
+                <span class="text-muted" style="font-size:12px">Storico (opzionale) — eredita l'identità di una squadra di stagioni passate:</span>
+                <p-dropdown
+                  [options]="historicalTeamOptions()"
+                  [(ngModel)]="decisions[team.leghe_team_id].historicalTeamId"
+                  placeholder="Nessuno, squadra nuova"
+                  [filter]="true"
+                  filterBy="label"
+                  [showClear]="true"
+                  appendTo="body"
+                  styleClass="team-drop"
+                />
               </div>
             }
 
@@ -308,6 +328,7 @@ export class AdminLegheSyncComponent implements OnInit {
           this.decisions[team.leghe_team_id] = {
             fantaTeamId: team.suggested_fanta_team_id,
             createNew: !team.suggested_fanta_team_id && !team.already_linked_team_id,
+            historicalTeamId: team.suggested_lineage_team_id,
             newName: team.leghe_team_name,
             updateName: false,
             primaryLegheCoachId: team.coaches[0]?.leghe_coach_id ?? null,
@@ -338,6 +359,12 @@ export class AdminLegheSyncComponent implements OnInit {
 
   teamOptions() {
     return (this.preview()?.our_teams ?? []).map((t: any) => ({ label: t.name, value: t.id }));
+  }
+
+  historicalTeamOptions() {
+    return (this.preview()?.historical_teams ?? []).map((t: any) => ({
+      label: `${t.name} (${t.season_label})`, value: t.id,
+    }));
   }
 
   allenatoreOptions() {
@@ -415,6 +442,7 @@ export class AdminLegheSyncComponent implements OnInit {
         league_level: team.league_level,
         fanta_team_id: fantaTeamId,
         create_new: !team.already_linked_team_id && d.createNew,
+        lineage_source_team_id: d.createNew ? d.historicalTeamId : null,
         new_name: d.newName,
         update_name: d.updateName,
         coaches,
