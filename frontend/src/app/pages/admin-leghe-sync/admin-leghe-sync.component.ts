@@ -50,11 +50,13 @@ function slugUsername(name: string): string {
             styleClass="filter-drop"
           />
           <button pButton label="Carica da leghe.fantacalcio.it" icon="pi pi-download" [loading]="loading()" [disabled]="!selectedSeasonId" (click)="load()"></button>
+          <button pButton label="🎯 Sync punteggi (Goku/Oscar)" class="p-button-outlined" [loading]="syncingScores()" [disabled]="!selectedSeasonId" (click)="syncMatchdayScores()"></button>
           <button pButton label="Sync risultati/calendario" icon="pi pi-chart-bar" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="syncResults()"></button>
         </div>
         <p class="text-muted" style="font-size:12px; margin-top:6px;">
-          "Sync risultati/calendario" scarica da leghe.fantacalcio.it le partite già giocate di ogni
-          competizione collegata (id salvato) e aggiorna i punteggi usati da Premio Goku/Oscar — da fare
+          <strong>Sync punteggi</strong>: fonte usata da Premio Goku/Oscar, copre tutte le competizioni
+          collegate incluso Silver, ma non dice chi ha giocato contro chi. <strong>Sync risultati/calendario</strong>:
+          dà anche l'accoppiamento partita e i gol da fasce (non funziona per Silver). Entrambe da fare
           dopo aver collegato le squadre qui sotto.
         </p>
       </div>
@@ -68,6 +70,27 @@ function slugUsername(name: string): string {
           <div>✅ Squadre collegate: {{ r.teams_linked }} (nuove: {{ r.teams_created }}, rinominate: {{ r.teams_renamed }}) · Allenatori creati: {{ r.allenatori_created }} (email aggiornate: {{ r.allenatori_email_aggiornati }}) · Associazioni squadra-allenatore: {{ r.coaches_assigned }}</div>
           @for (e of r.errors; track e) {
             <div class="text-negative">⚠️ {{ e }}</div>
+          }
+        </div>
+      }
+
+      @if (scoresReport(); as sr) {
+        <div class="card status-msg mb-4">
+          @for (kv of resultsReportEntries(sr); track kv.type) {
+            <div>
+              <strong>{{ kv.type }}</strong>:
+              @if (kv.data.error) {
+                <span class="text-negative">⚠️ {{ kv.data.error }}</span>
+              } @else {
+                {{ kv.data.scores_synced }} punteggi sincronizzati
+                @if (kv.data.teams_unmatched) {
+                  <span class="text-negative">— {{ kv.data.teams_unmatched }} squadre non collegate</span>
+                }
+              }
+            </div>
+          }
+          @empty {
+            <p class="text-muted">Nessuna competizione con id leghe.fantacalcio.it collegato per questa stagione — collega prima le squadre qui sotto.</p>
           }
         </div>
       }
@@ -241,10 +264,12 @@ export class AdminLegheSyncComponent implements OnInit {
   loading = signal(false);
   applying = signal(false);
   syncingResults = signal(false);
+  syncingScores = signal(false);
   error = signal('');
   preview = signal<any>(null);
   report = signal<any>(null);
   resultsReport = signal<Record<string, any> | null>(null);
+  scoresReport = signal<Record<string, any> | null>(null);
 
   decisions: Record<number, TeamDecisionState> = {};
 
@@ -341,6 +366,23 @@ export class AdminLegheSyncComponent implements OnInit {
 
   resultsReportEntries(report: Record<string, any>): { type: string; data: any }[] {
     return Object.entries(report).map(([type, data]) => ({ type, data }));
+  }
+
+  syncMatchdayScores() {
+    if (!this.selectedSeasonId) return;
+    this.syncingScores.set(true);
+    this.error.set('');
+    this.scoresReport.set(null);
+    this.api.syncLegheMatchdayScores(this.selectedSeasonId).subscribe({
+      next: res => {
+        this.syncingScores.set(false);
+        this.scoresReport.set(res);
+      },
+      error: err => {
+        this.syncingScores.set(false);
+        this.error.set(err.error?.detail || 'Errore durante la sync dei punteggi.');
+      },
+    });
   }
 
   apply() {

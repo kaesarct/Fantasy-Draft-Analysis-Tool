@@ -406,4 +406,9 @@ export class ApiService {
     const params = new HttpParams().set('season_id', seasonId);
     return this.http.post<any>(`${this.base}/leghe-sync/sync-results`, {}, { params });
   }
+
+  syncLegheMatchdayScores(seasonId: number): Observable<any> {
+    const params = new HttpParams().set('season_id', seasonId);
+    return this.http.post<any>(`${this.base}/leghe-sync/sync-matchday-scores`, {}, { params });
+  }
 }

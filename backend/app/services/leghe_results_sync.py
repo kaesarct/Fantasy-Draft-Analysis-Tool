@@ -104,7 +104,13 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
     client.login()
 
     query = db.query(Competition).filter(
-        Competition.season_id == season.id, Competition.leghe_id.isnot(None)
+        Competition.season_id == season.id,
+        Competition.leghe_id.isnot(None),
+        # Silver non ha mai un calendario testa a testa da scaricare (e' una
+        # classifica ad accumulo che rispecchia il campionato di appartenenza,
+        # verificato dal vivo: l'export ritorna "File non disponibile" come
+        # per Tenkaichi) — e non serve comunque al calcolo Goku/Oscar.
+        Competition.type != "SILVER",
     )
     if comp_types:
         query = query.filter(Competition.type.in_(comp_types))

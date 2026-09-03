@@ -14,6 +14,7 @@ from app.services.auth_service import require_admin
 from app.services.leghe_client import LegheClient
 from app.services.leghe_competition_sync import apply_competition_list
 from app.services.leghe_results_sync import sync_results
+from app.services.leghe_lineup_scores_sync import sync_matchday_scores
 from app.routers.league import MAIN_LEAGUE_TYPES
 
 router = APIRouter(prefix="/leghe-sync", tags=["leghe-sync"])
@@ -253,3 +254,13 @@ def sync_leghe_results(
     if not season:
         raise HTTPException(404, "Stagione non trovata")
     return sync_results(db, season)
+
+
+@router.post("/sync-matchday-scores")
+def sync_leghe_matchday_scores(
+    season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+    return sync_matchday_scores(db, season)

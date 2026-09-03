@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
-from app.models.competition import Competition, CompetitionPhase, CompetitionStanding, CompetitionType, MatchResult, SeasonAward
+from app.models.competition import Competition, CompetitionMatchdayScore, CompetitionPhase, CompetitionStanding, CompetitionType, MatchResult, SeasonAward
 from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
 
@@ -29,6 +29,31 @@ _PHASE_LABELS = {
 def _round_label(phase, match_day: int) -> str:
     label = _PHASE_LABELS.get(phase)
     return label if label else f"{match_day}ª giornata"
+
+
+def _matchday_scores_from_lineup_sync(db: Session, comp: Competition, comp_type: str) -> list[dict]:
+    """Punteggio reale di giornata, da CompetitionMatchdayScore (sincronizzato
+    da leghe.fantacalcio.it via teamLineup — vedi POST /leghe-sync/sync-matchday-scores).
+    Fonte preferita: funziona anche per competizioni senza scontri diretti
+    (es. Silver), ma non porta l'informazione di fase — per le coppe mostra
+    sempre "Nª giornata" invece di "semifinale" ecc. (quella richiede anche
+    un MatchResult sincronizzato dall'Excel Calendario per la stessa
+    competizione)."""
+    rows = (
+        db.query(CompetitionMatchdayScore, FantaTeam.name)
+        .join(FantaTeam, FantaTeam.id == CompetitionMatchdayScore.fanta_team_id)
+        .filter(CompetitionMatchdayScore.competition_id == comp.id)
+        .all()
+    )
+    return [
+        {
+            "fanta_team_id": s.fanta_team_id, "fanta_team_name": team_name,
+            "competition_type": comp_type, "match_day": s.match_day,
+            "round_label": _round_label(None, s.match_day),
+            "score": s.score,
+        }
+        for s, team_name in rows
+    ]
 
 
 def _matchday_scores_from_match_results(db: Session, comp: Competition, comp_type: str) -> list[dict]:
@@ -87,15 +112,20 @@ def _matchday_scores_from_standings(db: Session, comp: Competition, comp_type: s
 
 def _matchday_scores(db: Session, season_id: int, comp_types: list[str]) -> list[dict]:
     """Punteggio di ogni squadra per singola giornata/partita, per tutte le
-    competizioni della stagione tra quelle passate. Usa MatchResult (dati
-    reali) quando disponibile, altrimenti il ripiego a classifica cumulativa —
-    cosi' una competizione senza ancora nessun risultato sincronizzato non
-    sparisce dal conteggio."""
+    competizioni della stagione tra quelle passate. Prova le fonti in ordine
+    di affidabilita': CompetitionMatchdayScore (teamLineup, universale) ->
+    MatchResult (Excel Calendario, porta anche la fase per le coppe) ->
+    ripiego a classifica cumulativa — cosi' una competizione senza ancora
+    nessun dato sincronizzato non sparisce dal conteggio."""
     performances = []
     for comp in db.query(Competition).filter(
         Competition.season_id == season_id, Competition.type.in_(comp_types)
     ):
         comp_type = comp.type.value if hasattr(comp.type, "value") else comp.type
+        from_lineup = _matchday_scores_from_lineup_sync(db, comp, comp_type)
+        if from_lineup:
+            performances.extend(from_lineup)
+            continue
         from_results = _matchday_scores_from_match_results(db, comp, comp_type)
         performances.extend(from_results if from_results else _matchday_scores_from_standings(db, comp, comp_type))
     return performances
@@ -187,22 +217,45 @@ def get_silver_consistency(
         if not league_comp:
             continue
 
-        league_by_day = {
-            s.match_day: s.total_score
-            for s in db.query(CompetitionStanding).filter(
-                CompetitionStanding.competition_id == league_comp.id,
-                CompetitionStanding.fanta_team_id == team.id,
+        # Preferita: confronto diretto giornata-per-giornata sui punteggi reali
+        # sincronizzati da teamLineup (CompetitionMatchdayScore) — una
+        # discrepanza isolata non si perde in una somma cumulata. Ripiego al
+        # confronto cumulativo su CompetitionStanding.total_score quando
+        # mancano dati sincronizzati per una delle due parti.
+        league_lineup = {
+            s.match_day: s.score
+            for s in db.query(CompetitionMatchdayScore).filter(
+                CompetitionMatchdayScore.competition_id == league_comp.id,
+                CompetitionMatchdayScore.fanta_team_id == team.id,
             )
         }
-        silver_by_day = {}
-        if silver_comp:
-            silver_by_day = {
+        silver_lineup = {
+            s.match_day: s.score
+            for s in db.query(CompetitionMatchdayScore).filter(
+                CompetitionMatchdayScore.competition_id == silver_comp.id,
+                CompetitionMatchdayScore.fanta_team_id == team.id,
+            )
+        } if silver_comp else {}
+
+        if league_lineup and silver_lineup:
+            league_by_day, silver_by_day = league_lineup, silver_lineup
+        else:
+            league_by_day = {
                 s.match_day: s.total_score
                 for s in db.query(CompetitionStanding).filter(
-                    CompetitionStanding.competition_id == silver_comp.id,
+                    CompetitionStanding.competition_id == league_comp.id,
                     CompetitionStanding.fanta_team_id == team.id,
                 )
             }
+            silver_by_day = {}
+            if silver_comp:
+                silver_by_day = {
+                    s.match_day: s.total_score
+                    for s in db.query(CompetitionStanding).filter(
+                        CompetitionStanding.competition_id == silver_comp.id,
+                        CompetitionStanding.fanta_team_id == team.id,
+                    )
+                }
 
         for match_day in sorted(set(league_by_day) | set(silver_by_day)):
             league_value = league_by_day.get(match_day)

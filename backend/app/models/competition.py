@@ -135,6 +135,26 @@ class CompetitionStanding(Base):
     fanta_team = relationship("FantaTeam", back_populates="standings")
 
 
+class CompetitionMatchdayScore(Base):
+    """Punteggio di una squadra in una singola giornata, senza bisogno di un
+    avversario (a differenza di MatchResult) — sincronizzato da leghe.fantacalcio.it
+    via GET gaming/v1/teamLineup (campo "tot"), l'unica fonte che funziona anche
+    per competizioni senza scontri diretti come Silver."""
+    __tablename__ = "competition_matchday_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    competition_id = Column(Integer, ForeignKey("competitions.id"), nullable=False)
+    fanta_team_id = Column(Integer, ForeignKey("fanta_teams.id"), nullable=False)
+    match_day = Column(Integer, nullable=False)
+    score = Column(Float, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "competition_id", "fanta_team_id", "match_day", name="uq_matchday_score"
+        ),
+    )
+
+
 class AwardType(str, enum.Enum):
     GOKU = "GOKU"     # punteggio più alto della stagione
     OSCAR = "OSCAR"   # punteggio più basso della stagione
