@@ -19,6 +19,9 @@ interface CoachDecisionState {
 interface TeamDecisionState {
   fantaTeamId: number | null;
   createNew: boolean;
+  newName: string;
+  updateName: boolean;
+  primaryLegheCoachId: number | null;
   coaches: Record<number, CoachDecisionState>;
 }
 
@@ -56,7 +59,7 @@ function slugUsername(name: string): string {
 
       @if (report(); as r) {
         <div class="card status-msg mb-4" [class.error]="r.errors.length">
-          <div>✅ Squadre collegate: {{ r.teams_linked }} (di cui nuove: {{ r.teams_created }}) · Allenatori creati: {{ r.allenatori_created }} · Associazioni squadra-allenatore: {{ r.coaches_assigned }}</div>
+          <div>✅ Squadre collegate: {{ r.teams_linked }} (nuove: {{ r.teams_created }}, rinominate: {{ r.teams_renamed }}) · Allenatori creati: {{ r.allenatori_created }} (email aggiornate: {{ r.allenatori_email_aggiornati }}) · Associazioni squadra-allenatore: {{ r.coaches_assigned }}</div>
           @for (e of r.errors; track e) {
             <div class="text-negative">⚠️ {{ e }}</div>
           }
@@ -105,9 +108,34 @@ function slugUsername(name: string): string {
               </div>
             }
 
+            @if (matchedTeamName(team); as currentName) {
+              @if (currentName !== team.leghe_team_name) {
+                <div class="rename-row">
+                  <span class="text-muted">Nome diverso da leghe.fantacalcio.it: "{{ currentName }}" →</span>
+                  <input pInputText [(ngModel)]="decisions[team.leghe_team_id].newName" class="rename-input" />
+                  <p-checkbox
+                    [binary]="true"
+                    [(ngModel)]="decisions[team.leghe_team_id].updateName"
+                    inputId="rename-{{ team.leghe_team_id }}"
+                  />
+                  <label [for]="'rename-' + team.leghe_team_id">aggiorna nome</label>
+                </div>
+              }
+            }
+
             <div class="coach-list">
               @for (coach of team.coaches; track coach.leghe_coach_id) {
                 <div class="coach-row">
+                  @if (team.coaches.length > 1) {
+                    <input
+                      type="radio"
+                      [name]="'primary-' + team.leghe_team_id"
+                      [value]="coach.leghe_coach_id"
+                      [(ngModel)]="decisions[team.leghe_team_id].primaryLegheCoachId"
+                      id="primary-{{ team.leghe_team_id }}-{{ coach.leghe_coach_id }}"
+                    />
+                    <label class="text-muted" [for]="'primary-' + team.leghe_team_id + '-' + coach.leghe_coach_id" title="Allenatore principale">principale</label>
+                  }
                   <span class="coach-name">{{ coach.name }}</span>
                   <span class="text-muted coach-email">{{ coach.email || 'nessuna email' }}</span>
                   <p-checkbox
@@ -167,8 +195,12 @@ function slugUsername(name: string): string {
     .team-link-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .team-drop { min-width: 220px; }
 
+    .rename-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; }
+    .rename-input { width: 200px; }
+
     .coach-list { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle); }
     .coach-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+    .coach-row label[for^="primary-"] { margin-right: 6px; font-size: 11px; }
     .coach-name { font-weight: 600; min-width: 120px; }
     .coach-email { min-width: 160px; }
     .coach-drop { min-width: 200px; }
@@ -222,6 +254,9 @@ export class AdminLegheSyncComponent implements OnInit {
           this.decisions[team.leghe_team_id] = {
             fantaTeamId: team.suggested_fanta_team_id,
             createNew: !team.suggested_fanta_team_id && !team.already_linked_team_id,
+            newName: team.leghe_team_name,
+            updateName: false,
+            primaryLegheCoachId: team.coaches[0]?.leghe_coach_id ?? null,
             coaches,
           };
         }
@@ -236,6 +271,15 @@ export class AdminLegheSyncComponent implements OnInit {
 
   teamName(id: number): string {
     return this.preview()?.our_teams?.find((t: any) => t.id === id)?.name ?? `#${id}`;
+  }
+
+  /** Nome della squadra attualmente abbinata (collegata o scelta nel dropdown),
+   * null se si sta creando una nuova squadra o non è ancora stata scelta. */
+  matchedTeamName(team: any): string | null {
+    const d = this.decisions[team.leghe_team_id];
+    if (!d || d.createNew) return null;
+    const id = team.already_linked_team_id ?? d.fantaTeamId;
+    return id ? this.teamName(id) : null;
   }
 
   teamOptions() {
@@ -258,13 +302,20 @@ export class AdminLegheSyncComponent implements OnInit {
       const fantaTeamId = team.already_linked_team_id ?? (d.createNew ? null : d.fantaTeamId);
       const coaches = team.coaches.map((c: any) => {
         const cd = d.coaches[c.leghe_coach_id];
+        const isPrimary = d.primaryLegheCoachId === c.leghe_coach_id;
         if (cd.createNew) {
           return {
             leghe_coach_id: c.leghe_coach_id,
             create: { username: cd.username, display_name: cd.displayName, email: cd.email || null },
+            is_primary: isPrimary,
           };
         }
-        return { leghe_coach_id: c.leghe_coach_id, allenatore_id: cd.allenatoreId };
+        return {
+          leghe_coach_id: c.leghe_coach_id,
+          allenatore_id: cd.allenatoreId,
+          leghe_email: c.email || null,
+          is_primary: isPrimary,
+        };
       });
       return {
         leghe_team_id: team.leghe_team_id,
@@ -272,6 +323,8 @@ export class AdminLegheSyncComponent implements OnInit {
         league_level: team.league_level,
         fanta_team_id: fantaTeamId,
         create_new: !team.already_linked_team_id && d.createNew,
+        new_name: d.newName,
+        update_name: d.updateName,
         coaches,
       };
     });

@@ -94,6 +94,8 @@ class CoachDecision(BaseModel):
     leghe_coach_id: int
     allenatore_id: int | None = None
     create: dict | None = None  # {username, display_name, email}
+    leghe_email: str | None = None  # email leghe.fantacalcio.it, per aggiornare l'allenatore collegato
+    is_primary: bool = False
 
 
 class TeamDecision(BaseModel):
@@ -102,6 +104,8 @@ class TeamDecision(BaseModel):
     league_level: str | None = None
     fanta_team_id: int | None = None
     create_new: bool = False
+    new_name: str | None = None
+    update_name: bool = False
     coaches: list[CoachDecision] = []
 
 
@@ -119,8 +123,8 @@ def apply_leghe_sync(
         raise HTTPException(404, "Stagione non trovata")
 
     report = {
-        "teams_linked": 0, "teams_created": 0,
-        "allenatori_created": 0, "coaches_assigned": 0,
+        "teams_linked": 0, "teams_created": 0, "teams_renamed": 0,
+        "allenatori_created": 0, "allenatori_email_aggiornati": 0, "coaches_assigned": 0,
         "errors": [],
     }
 
@@ -163,6 +167,15 @@ def apply_leghe_sync(
             team.leghe_team_id = team_decision.leghe_team_id
             report["teams_linked"] += 1
 
+            # Rinomina solo su un match esplicito: una squadra appena creata ha
+            # già il nome leghe, e senza update_name confermato dall'admin non
+            # tocco un nome storico solo perché diverso da quello su leghe.it.
+            if not team_decision.create_new and team_decision.update_name and team_decision.new_name:
+                new_name = team_decision.new_name.strip()
+                if new_name and new_name != team.name:
+                    team.name = new_name
+                    report["teams_renamed"] += 1
+
             for coach_decision in team_decision.coaches:
                 if coach_decision.allenatore_id:
                     allenatore = db.query(FantaAllenatore).filter(
@@ -170,6 +183,10 @@ def apply_leghe_sync(
                     ).first()
                     if not allenatore:
                         raise ValueError(f"{team.name}: allenatore selezionato non trovato")
+                    leghe_email = (coach_decision.leghe_email or "").strip() or None
+                    if leghe_email and allenatore.email != leghe_email:
+                        allenatore.email = leghe_email
+                        report["allenatori_email_aggiornati"] += 1
                 elif coach_decision.create:
                     c = coach_decision.create
                     username = (c.get("username") or "").strip()
@@ -188,12 +205,25 @@ def apply_leghe_sync(
                 else:
                     continue  # nessuna decisione per questo allenatore: lo salto
 
+                if coach_decision.is_primary:
+                    # Un solo allenatore primario per squadra (stessa regola di
+                    # assign_coach in teams.py).
+                    db.query(FantaTeamCoach).filter(
+                        FantaTeamCoach.fanta_team_id == team.id,
+                        FantaTeamCoach.is_primary == True,
+                    ).update({FantaTeamCoach.is_primary: False})
+
                 existing_link = db.query(FantaTeamCoach).filter(
                     FantaTeamCoach.fanta_team_id == team.id,
                     FantaTeamCoach.allenatore_id == allenatore.id,
                 ).first()
-                if not existing_link:
-                    db.add(FantaTeamCoach(fanta_team_id=team.id, allenatore_id=allenatore.id))
+                if existing_link:
+                    existing_link.is_primary = coach_decision.is_primary
+                else:
+                    db.add(FantaTeamCoach(
+                        fanta_team_id=team.id, allenatore_id=allenatore.id,
+                        is_primary=coach_decision.is_primary,
+                    ))
                     report["coaches_assigned"] += 1
 
             savepoint.commit()
