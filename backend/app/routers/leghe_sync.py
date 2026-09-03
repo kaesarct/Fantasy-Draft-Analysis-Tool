@@ -13,6 +13,7 @@ from app.models.fanta_allenatore import FantaAllenatore
 from app.services.auth_service import require_admin
 from app.services.leghe_client import LegheClient
 from app.services.leghe_competition_sync import apply_competition_list
+from app.services.leghe_results_sync import sync_results
 from app.routers.league import MAIN_LEAGUE_TYPES
 
 router = APIRouter(prefix="/leghe-sync", tags=["leghe-sync"])
@@ -242,3 +243,13 @@ def apply_leghe_sync(
 
     db.commit()
     return report
+
+
+@router.post("/sync-results")
+def sync_leghe_results(
+    season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+    return sync_results(db, season)

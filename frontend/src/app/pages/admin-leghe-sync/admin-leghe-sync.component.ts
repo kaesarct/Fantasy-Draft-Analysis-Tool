@@ -50,7 +50,13 @@ function slugUsername(name: string): string {
             styleClass="filter-drop"
           />
           <button pButton label="Carica da leghe.fantacalcio.it" icon="pi pi-download" [loading]="loading()" [disabled]="!selectedSeasonId" (click)="load()"></button>
+          <button pButton label="Sync risultati/calendario" icon="pi pi-chart-bar" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="syncResults()"></button>
         </div>
+        <p class="text-muted" style="font-size:12px; margin-top:6px;">
+          "Sync risultati/calendario" scarica da leghe.fantacalcio.it le partite già giocate di ogni
+          competizione collegata (id salvato) e aggiorna i punteggi usati da Premio Goku/Oscar — da fare
+          dopo aver collegato le squadre qui sotto.
+        </p>
       </div>
 
       @if (error()) {
@@ -62,6 +68,27 @@ function slugUsername(name: string): string {
           <div>✅ Squadre collegate: {{ r.teams_linked }} (nuove: {{ r.teams_created }}, rinominate: {{ r.teams_renamed }}) · Allenatori creati: {{ r.allenatori_created }} (email aggiornate: {{ r.allenatori_email_aggiornati }}) · Associazioni squadra-allenatore: {{ r.coaches_assigned }}</div>
           @for (e of r.errors; track e) {
             <div class="text-negative">⚠️ {{ e }}</div>
+          }
+        </div>
+      }
+
+      @if (resultsReport(); as rr) {
+        <div class="card status-msg mb-4">
+          @for (kv of resultsReportEntries(rr); track kv.type) {
+            <div>
+              <strong>{{ kv.type }}</strong>:
+              @if (kv.data.error) {
+                <span class="text-negative">⚠️ {{ kv.data.error }}</span>
+              } @else {
+                {{ kv.data.matches_imported }} importate, {{ kv.data.matches_updated }} aggiornate
+                @if (kv.data.teams_unmatched?.length) {
+                  <span class="text-negative">— squadre non riconosciute: {{ kv.data.teams_unmatched.join(', ') }}</span>
+                }
+              }
+            </div>
+          }
+          @empty {
+            <p class="text-muted">Nessuna competizione con id leghe.fantacalcio.it collegato per questa stagione — collega prima le squadre qui sotto.</p>
           }
         </div>
       }
@@ -213,9 +240,11 @@ export class AdminLegheSyncComponent implements OnInit {
 
   loading = signal(false);
   applying = signal(false);
+  syncingResults = signal(false);
   error = signal('');
   preview = signal<any>(null);
   report = signal<any>(null);
+  resultsReport = signal<Record<string, any> | null>(null);
 
   decisions: Record<number, TeamDecisionState> = {};
 
@@ -291,6 +320,27 @@ export class AdminLegheSyncComponent implements OnInit {
       label: a.email ? `${a.display_name} (${a.email})` : a.display_name,
       value: a.id,
     }));
+  }
+
+  syncResults() {
+    if (!this.selectedSeasonId) return;
+    this.syncingResults.set(true);
+    this.error.set('');
+    this.resultsReport.set(null);
+    this.api.syncLegheResults(this.selectedSeasonId).subscribe({
+      next: res => {
+        this.syncingResults.set(false);
+        this.resultsReport.set(res);
+      },
+      error: err => {
+        this.syncingResults.set(false);
+        this.error.set(err.error?.detail || 'Errore durante la sync dei risultati.');
+      },
+    });
+  }
+
+  resultsReportEntries(report: Record<string, any>): { type: string; data: any }[] {
+    return Object.entries(report).map(([type, data]) => ({ type, data }));
   }
 
   apply() {

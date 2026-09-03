@@ -401,4 +401,9 @@ export class ApiService {
   applyLegheSync(payload: any): Observable<any> {
     return this.http.post<any>(`${this.base}/leghe-sync/apply`, payload);
   }
+
+  syncLegheResults(seasonId: number): Observable<any> {
+    const params = new HttpParams().set('season_id', seasonId);
+    return this.http.post<any>(`${this.base}/leghe-sync/sync-results`, {}, { params });
+  }
 }

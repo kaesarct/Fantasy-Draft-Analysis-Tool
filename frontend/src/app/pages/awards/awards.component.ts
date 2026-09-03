@@ -29,7 +29,7 @@ const COMPETITION_LABELS: Record<string, string> = {
                 <div class="award-entry">
                   <span class="award-team">{{ p.fanta_team_name }}</span>
                   <span class="award-score">{{ p.score }}</span>
-                  <span class="text-muted award-meta">{{ competitionLabel(p.competition_type) }} — {{ p.match_day }}ª giornata</span>
+                  <span class="text-muted award-meta">{{ competitionLabel(p.competition_type) }} — {{ p.round_label }}</span>
                 </div>
               }
             } @else {
@@ -45,7 +45,7 @@ const COMPETITION_LABELS: Record<string, string> = {
                 <div class="award-entry">
                   <span class="award-team">{{ p.fanta_team_name }}</span>
                   <span class="award-score">{{ p.score }}</span>
-                  <span class="text-muted award-meta">{{ competitionLabel(p.competition_type) }} — {{ p.match_day }}ª giornata</span>
+                  <span class="text-muted award-meta">{{ competitionLabel(p.competition_type) }} — {{ p.round_label }}</span>
                 </div>
               }
             } @else {

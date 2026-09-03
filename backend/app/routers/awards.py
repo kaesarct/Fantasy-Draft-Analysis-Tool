@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
-from app.models.competition import Competition, CompetitionStanding, CompetitionType, SeasonAward
+from app.models.competition import Competition, CompetitionPhase, CompetitionStanding, CompetitionType, MatchResult, SeasonAward
 from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
 
@@ -18,44 +18,86 @@ _AWARD_COMPETITION_TYPES = [
 _SILVER_TOLERANCE = 0.01
 
 
-def _matchday_scores(db: Session, season_id: int, comp_types: list[str]) -> list[dict]:
-    """Punteggio di ogni squadra per singola giornata/partita, ricavato come
-    differenza tra il `total_score` cumulato ("Pt. Totali", il fantapunteggio
-    di squadra — non va confuso con `goals_for`, i gol calcolati dalle fasce)
-    di due righe CompetitionStanding consecutive (stessa competizione, stessa
-    squadra). E' un ripiego: oggi non esiste un flusso che scriva un
-    punteggio di giornata singola per la stagione corrente, solo l'editor
-    classifica cumulativa in Gestione Squadre (vedi PUT /competitions/{id}/standings)."""
+_PHASE_LABELS = {
+    CompetitionPhase.ROUND_OF_16: "ottavi di finale",
+    CompetitionPhase.QUARTER_FINAL: "quarti di finale",
+    CompetitionPhase.SEMI_FINAL: "semifinale",
+    CompetitionPhase.FINAL: "finale",
+}
+
+
+def _round_label(phase, match_day: int) -> str:
+    label = _PHASE_LABELS.get(phase)
+    return label if label else f"{match_day}ª giornata"
+
+
+def _matchday_scores_from_match_results(db: Session, comp: Competition, comp_type: str) -> list[dict]:
+    """Punteggio reale di singola partita, da MatchResult (sincronizzato da
+    leghe.fantacalcio.it — vedi POST /leghe-sync/sync-results)."""
+    matches = db.query(MatchResult).filter(MatchResult.competition_id == comp.id).all()
+    team_ids = {m.fanta_team_home_id for m in matches} | {m.fanta_team_away_id for m in matches}
+    names = {t.id: t.name for t in db.query(FantaTeam).filter(FantaTeam.id.in_(team_ids))}
+
+    performances = []
+    for m in matches:
+        round_label = _round_label(m.phase, m.match_day)
+        for team_id, score in ((m.fanta_team_home_id, m.score_home), (m.fanta_team_away_id, m.score_away)):
+            if score is None:
+                continue
+            performances.append({
+                "fanta_team_id": team_id, "fanta_team_name": names.get(team_id, "?"),
+                "competition_type": comp_type, "match_day": m.match_day, "round_label": round_label,
+                "score": score,
+            })
+    return performances
+
+
+def _matchday_scores_from_standings(db: Session, comp: Competition, comp_type: str) -> list[dict]:
+    """Ripiego quando la competizione non ha ancora nessun MatchResult
+    sincronizzato: punteggio di giornata ricavato come differenza tra il
+    `total_score` cumulato ("Pt. Totali", il fantapunteggio di squadra — non
+    va confuso con `goals_for`, i gol calcolati dalle fasce) di due righe
+    CompetitionStanding consecutive, inserite a mano nell'editor classifica
+    di Gestione Squadre (PUT /competitions/{id}/standings)."""
     rows = (
-        db.query(CompetitionStanding, Competition.type, FantaTeam.name)
-        .join(Competition, Competition.id == CompetitionStanding.competition_id)
+        db.query(CompetitionStanding, FantaTeam.name)
         .join(FantaTeam, FantaTeam.id == CompetitionStanding.fanta_team_id)
-        .filter(Competition.season_id == season_id, Competition.type.in_(comp_types))
-        .order_by(
-            CompetitionStanding.competition_id,
-            CompetitionStanding.fanta_team_id,
-            CompetitionStanding.match_day,
-        )
+        .filter(CompetitionStanding.competition_id == comp.id)
+        .order_by(CompetitionStanding.fanta_team_id, CompetitionStanding.match_day)
         .all()
     )
 
     performances = []
-    prev_key = None
+    prev_team_id = None
     prev_cumulative = 0.0
-    for standing, comp_type, team_name in rows:
-        key = (standing.competition_id, standing.fanta_team_id)
-        if key != prev_key:
+    for standing, team_name in rows:
+        if standing.fanta_team_id != prev_team_id:
             prev_cumulative = 0.0
         delta = round(standing.total_score - prev_cumulative, 2)
         performances.append({
-            "fanta_team_id": standing.fanta_team_id,
-            "fanta_team_name": team_name,
-            "competition_type": comp_type.value if hasattr(comp_type, "value") else comp_type,
-            "match_day": standing.match_day,
+            "fanta_team_id": standing.fanta_team_id, "fanta_team_name": team_name,
+            "competition_type": comp_type, "match_day": standing.match_day,
+            "round_label": _round_label(None, standing.match_day),
             "score": delta,
         })
         prev_cumulative = standing.total_score
-        prev_key = key
+        prev_team_id = standing.fanta_team_id
+    return performances
+
+
+def _matchday_scores(db: Session, season_id: int, comp_types: list[str]) -> list[dict]:
+    """Punteggio di ogni squadra per singola giornata/partita, per tutte le
+    competizioni della stagione tra quelle passate. Usa MatchResult (dati
+    reali) quando disponibile, altrimenti il ripiego a classifica cumulativa —
+    cosi' una competizione senza ancora nessun risultato sincronizzato non
+    sparisce dal conteggio."""
+    performances = []
+    for comp in db.query(Competition).filter(
+        Competition.season_id == season_id, Competition.type.in_(comp_types)
+    ):
+        comp_type = comp.type.value if hasattr(comp.type, "value") else comp.type
+        from_results = _matchday_scores_from_match_results(db, comp, comp_type)
+        performances.extend(from_results if from_results else _matchday_scores_from_standings(db, comp, comp_type))
     return performances
 
 
@@ -76,7 +118,7 @@ def _absolute_record(
         candidates.append({
             "source": "stagione_corrente", "season_label": current_season_label,
             "team_name": best_current["fanta_team_name"], "score": best_current["score"],
-            "detail": f"{best_current['competition_type']} — {best_current['match_day']}ª giornata",
+            "detail": f"{best_current['competition_type']} — {best_current['round_label']}",
         })
     if not candidates:
         return None

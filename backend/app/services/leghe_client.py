@@ -147,6 +147,31 @@ class LegheClient:
         resp.raise_for_status()
         return resp.json()
 
+    def download_results_excel(self, id_competizione: int, nome_competizione: str) -> bytes:
+        """Excel "Calendario" (partite + punteggi) di una competizione, stesso
+        formato colonna-per-colonna gia' letto da etl/import_history.py per lo
+        storico. Va processato in memoria e mai scritto su disco.
+
+        Richiede self.session (non requests.get): l'endpoint e' su
+        leghe.fantacalcio.it, non su apileague.fantacalcio.it come le altre
+        chiamate di questa classe, e senza i cookie di sessione gia' presenti
+        risponde 200 con un JSON di errore ("AD05 - non hai le credenziali")
+        invece del file — verificato dal vivo."""
+        resp = self.session.get(
+            "https://leghe.fantacalcio.it/servizi/v1_legheCompetizione/excel",
+            params={
+                "alias_lega": self.alias_lega,
+                "id_competizione": id_competizione,
+                "nome_competizione": nome_competizione,
+            },
+            headers=self._lega_headers(),
+            timeout=20,
+        )
+        resp.raise_for_status()
+        if resp.headers.get("content-type", "").startswith("application/json"):
+            raise RuntimeError(f"Download risultati fallito per competizione {id_competizione}: {resp.text}")
+        return resp.content
+
     def get_tutte_le_formazioni(self, giornata: int) -> dict:
         """Formazioni di tutte le competizioni della lega per la giornata data.
         Ritorna {slug_competizione: {"id_comp", "giornata", "dati": {nome_squadra: lineup}} | None}
