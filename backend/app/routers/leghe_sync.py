@@ -12,10 +12,10 @@ from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaTeamLineage, L
 from app.models.fanta_allenatore import FantaAllenatore
 from app.services.auth_service import require_admin
 from app.services.leghe_client import LegheClient
-from app.services.leghe_competition_sync import apply_competition_list
+from app.services.leghe_competition_sync import ensure_competitions
 from app.services.leghe_results_sync import sync_results
 from app.services.leghe_lineup_scores_sync import sync_matchday_scores
-from app.routers.league import MAIN_LEAGUE_TYPES, _ensure_league_and_competition
+from app.services.competition_provisioning import MAIN_LEAGUE_TYPES, _ensure_league_and_competition
 
 router = APIRouter(prefix="/leghe-sync", tags=["leghe-sync"])
 
@@ -48,11 +48,10 @@ def get_leghe_participants(
         for team_id in comp.get("tmids") or []:
             team_level[team_id] = level
 
-    # Aggancia anche gli id leghe.fantacalcio.it delle Competition gia'
-    # esistenti da noi (es. UEFA, creata su leghe solo a fine gironi Ciempions
-    # e quindi spesso ancora assente qui): stessa chiamata gia' fatta sopra,
-    # nessun costo aggiuntivo.
-    competitions_linked = apply_competition_list(db, season, leghe_competitions)
+    # Crea (se mancano) e aggancia le Competition corrispondenti — incluse
+    # Ciempions/Coppa Italia/Euro Cup/Silver, non solo Gold/Bronze/Carbon:
+    # stessa chiamata gia' fatta sopra, nessun costo aggiuntivo.
+    competitions_result = ensure_competitions(db, season, leghe_competitions)
 
     participants = client.get_participants()
 
@@ -119,7 +118,8 @@ def get_leghe_participants(
             {"id": a.id, "display_name": a.display_name, "email": a.email} for a in our_allenatori
         ],
         "participants": result,
-        "competitions_linked": competitions_linked,
+        "competitions_created": competitions_result["created"],
+        "competitions_linked": competitions_result["linked"],
     }
 
 

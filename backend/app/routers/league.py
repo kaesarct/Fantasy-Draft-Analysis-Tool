@@ -9,16 +9,13 @@ from app.models.fanta_team import FantaTeam, League, FantaTeamLineage, FantaTeam
 from app.models.injury import InjuryPlayer, InjuryArchive
 from app.services.auth_service import require_admin
 from app.services.season_import import import_season_data, import_season_votes
+from app.services.competition_provisioning import MAIN_LEAGUE_TYPES, _ensure_league_and_competition  # noqa: F401 (re-esportati per gli altri router)
 from app.routers.injuries import build_injuries_csv
 
 router = APIRouter(tags=["league"])
 
 seasons_router = APIRouter(prefix="/seasons")
 competitions_router = APIRouter(prefix="/competitions")
-
-# Gold/Bronze/Carbon hanno l'iscrizione automatica tramite FantaTeam.league_id
-# (stessa distinzione usata in frontend/.../admin-teams.component.ts).
-MAIN_LEAGUE_TYPES = {"GOLD", "BRONZE", "CARBON"}
 
 
 @seasons_router.get("")
@@ -187,36 +184,6 @@ class CompetitionCreate(BaseModel):
     season_id: int
     type: str
     name: str | None = None
-
-
-def _ensure_league_and_competition(db: Session, season: Season, comp_type: str, name: str | None = None) -> Competition:
-    """Crea la Competition (e, per Gold/Bronze/Carbon, la League se manca)
-    per una stagione. Non fa il commit: chi chiama decide la transazione."""
-    existing = db.query(Competition).filter(
-        Competition.season_id == season.id, Competition.type == comp_type
-    ).first()
-    if existing:
-        return existing
-
-    # Gold/Bronze/Carbon hanno iscrizione automatica via League: se manca la
-    # lega di quel livello per la stagione, la creo insieme alla competizione
-    # (altrimenti la competizione risulterebbe senza nessuna squadra eleggibile).
-    if comp_type in MAIN_LEAGUE_TYPES:
-        league = db.query(League).filter(
-            League.season_id == season.id, League.level == comp_type
-        ).first()
-        if not league:
-            league = League(season_id=season.id, level=comp_type)
-            db.add(league)
-            db.flush()
-
-    comp = Competition(
-        season_id=season.id, type=comp_type,
-        name=name or f"{comp_type.capitalize()} {season.label}",
-    )
-    db.add(comp)
-    db.flush()
-    return comp
 
 
 @competitions_router.post("", status_code=201)

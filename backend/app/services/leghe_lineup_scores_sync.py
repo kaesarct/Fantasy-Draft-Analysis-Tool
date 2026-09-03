@@ -14,7 +14,7 @@ from app.models.fanta_team import FantaTeam
 from app.models.season import Season
 from app.services.fanta_client import fanta_client
 from app.services.leghe_client import LegheClient
-from app.services.leghe_competition_sync import missing_competition_types
+from app.services.leghe_competition_sync import ensure_competitions
 
 
 def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | None = None) -> dict:
@@ -25,10 +25,13 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
     all_leghe_comps = client.list_competitions()
     leghe_comps = {c["id"]: c for c in all_leghe_comps}
 
-    report = {
-        t: {"error": "competizione non ancora creata — creala da Gestione Squadre"}
-        for t in missing_competition_types(db, season, all_leghe_comps)
-    }
+    # Crea (se mancano) e aggancia tutte le competizioni note trovate su
+    # leghe.fantacalcio.it — cosi' una comparsa a stagione in corso (es. UEFA
+    # a fine gironi Ciempions) viene sincronizzata gia' in questo stesso giro,
+    # senza dover passare prima da "Carica da leghe.fantacalcio.it".
+    ensured = ensure_competitions(db, season, all_leghe_comps)
+    newly_created = set(ensured["created"])
+    report = {}
 
     query = db.query(Competition).filter(
         Competition.season_id == season.id, Competition.leghe_id.isnot(None)
@@ -96,6 +99,9 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
                 synced += 1
 
         db.commit()
-        report[comp_type] = {"scores_synced": synced, "teams_unmatched": len(unmatched)}
+        report[comp_type] = {
+            "scores_synced": synced, "teams_unmatched": len(unmatched),
+            "appena_creata": comp_type in newly_created,
+        }
 
     return report

@@ -14,6 +14,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _best_effort_ensure_competitions(db: Session, season_id: int) -> None:
+    """Crea/aggancia le Competition mancanti (es. UEFA, creata su
+    leghe.fantacalcio.it solo a stagione inoltrata, a fine gironi Ciempions)
+    come effetto collaterale delle sync di routine — cosi' non serve un
+    passaggio manuale da Gestione Squadre ne' un "Carica da
+    leghe.fantacalcio.it" dedicato. Un errore qui (login leghe fallito,
+    competizione ancora assente) non deve mai far fallire la sync
+    principale, che e' il suo scopo primario."""
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        return
+    try:
+        sync_competition_leghe_ids(db, season)
+    except Exception as e:
+        logger.warning("Aggancio/creazione Competition fallito (non bloccante): %s", e)
+
+
 def sync_prices(db: Session, season_id: int) -> dict:
     """Download quotazioni Excel and upsert Player + PlayerSnapshot."""
     path = fanta_client.download_prices()
@@ -77,6 +94,9 @@ def sync_prices(db: Session, season_id: int) -> dict:
 
     db.commit()
     logger.info("sync_prices: created=%s updated=%s matchday=%s", created, updated, match_day)
+
+    _best_effort_ensure_competitions(db, season_id)
+
     return {"ok": True, "created": created, "updated": updated, "match_day": match_day}
 
 
@@ -132,16 +152,7 @@ def sync_votes(db: Session, season_id: int, match_day: int | None = None) -> dic
 
     db.commit()
 
-    # Ricontrollo best-effort: UEFA (e altre coppe) vengono create su
-    # leghe.fantacalcio.it solo a stagione inoltrata (es. UEFA a fine gironi
-    # Ciempions) — un errore qui (login leghe fallito, competizione ancora
-    # assente) non deve far fallire il sync voti, che e' il suo scopo primario.
-    season = db.query(Season).filter(Season.id == season_id).first()
-    if season:
-        try:
-            sync_competition_leghe_ids(db, season)
-        except Exception as e:
-            logger.warning("Aggancio Competition.leghe_id fallito (non bloccante): %s", e)
+    _best_effort_ensure_competitions(db, season_id)
 
     return {"ok": True, "saved": saved, "match_day": day}
 

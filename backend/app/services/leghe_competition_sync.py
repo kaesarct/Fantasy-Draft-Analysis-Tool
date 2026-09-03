@@ -1,66 +1,59 @@
-"""Aggiorna Competition.leghe_id incrociando LegheClient.list_competitions().
+"""Crea/aggancia le Competition della stagione a partire da list_competitions().
 
-Aggancia solo le Competition gia' esistenti nel nostro DB (mai le crea): una
-competizione come UEFA viene creata su leghe.fantacalcio.it solo a fine gironi
-Ciempions, quando ancora non sappiamo chi vi accede — la creiamo noi via
-Gestione Squadre quando arriva il momento, e da quel momento questo check la
-aggancia automaticamente al suo id leghe. Le competizioni leghe senza
-corrispondenza in CompetitionType (es. tornei extra come "Tenkaichi") vengono
-ignorate: non tracciate."""
+Ogni competizione trovata su leghe.fantacalcio.it (tra quelle note — vedi
+KNOWN_TYPES) viene creata automaticamente se manca ancora da noi (con la
+relativa League, per Gold/Bronze/Carbon), riusando la stessa logica gia'
+in POST /competitions e conclude_season. Chiamato sia dal caricamento
+squadre/allenatori sia da ogni sync di routine (voti, quotazioni, punteggi,
+risultati): cosi' una competizione come UEFA, che leghe.fantacalcio.it crea
+solo a fine gironi Ciempions, viene recepita in automatico al primo sync
+utile, senza un passaggio manuale da Gestione Squadre. Le competizioni leghe
+senza corrispondenza in CompetitionType (es. tornei extra come "Tenkaichi")
+restano ignorate: non tracciate."""
 from sqlalchemy.orm import Session
 
 from app.models.competition import Competition, CompetitionType
 from app.models.season import Season
+from app.services.competition_provisioning import _ensure_league_and_competition
 from app.services.leghe_client import LegheClient
 
 NAME_MAP = {"COPPA ITALIA": "COPPA_ITALIA", "EURO CUP": "EURO_CUP"}
 KNOWN_TYPES = {t.value for t in CompetitionType}
 
 
-def apply_competition_list(db: Session, season: Season, leghe_competitions: list[dict]) -> list[str]:
-    """Aggiorna leghe_id sulle Competition della stagione a partire da una
-    risposta di list_competitions() gia' scaricata (evita una seconda chiamata
-    quando il chiamante ce l'ha gia')."""
-    updated = []
+def ensure_competitions(db: Session, season: Season, leghe_competitions: list[dict]) -> dict:
+    """Crea (se mancano) e aggancia leghe_id per ogni competizione nota
+    trovata su leghe.fantacalcio.it, a partire da una risposta di
+    list_competitions() gia' scaricata (evita una seconda chiamata quando il
+    chiamante ce l'ha gia'). Ritorna {created: [...], linked: [...]}."""
+    created = []
+    linked = []
     for comp in leghe_competitions:
         raw_name = (comp.get("name") or "").strip().upper()
         comp_type = NAME_MAP.get(raw_name, raw_name)
         if comp_type not in KNOWN_TYPES:
             continue  # torneo extra non tracciato (es. "Tenkaichi")
 
-        our_comp = db.query(Competition).filter(
+        existing = db.query(Competition).filter(
             Competition.season_id == season.id, Competition.type == comp_type
         ).first()
-        if our_comp and our_comp.leghe_id != comp["id"]:
-            our_comp.leghe_id = comp["id"]
-            updated.append(comp_type)
+        if not existing:
+            _ensure_league_and_competition(db, season, comp_type)
+            existing = db.query(Competition).filter(
+                Competition.season_id == season.id, Competition.type == comp_type
+            ).first()
+            created.append(comp_type)
 
-    if updated:
+        if existing.leghe_id != comp["id"]:
+            existing.leghe_id = comp["id"]
+            linked.append(comp_type)
+
+    if created or linked:
         db.commit()
-    return updated
+    return {"created": created, "linked": linked}
 
 
-def sync_competition_leghe_ids(db: Session, season: Season, client: LegheClient | None = None) -> list[str]:
+def sync_competition_leghe_ids(db: Session, season: Season, client: LegheClient | None = None) -> dict:
     client = client or LegheClient()
     client.login()
-    return apply_competition_list(db, season, client.list_competitions())
-
-
-def missing_competition_types(db: Session, season: Season, leghe_competitions: list[dict]) -> list[str]:
-    """Tipi di competizione gia' attivi su leghe.fantacalcio.it ma senza
-    ancora una Competition nostra per la stagione (va creata a mano da
-    Gestione Squadre — sync-results/sync-matchday-scores non le creano mai).
-    Usata per segnalarle esplicitamente nel report invece di ometterle in
-    silenzio (facile scambiare "nessun dato" per "sync non riuscita")."""
-    available_types = set()
-    for comp in leghe_competitions:
-        raw_name = (comp.get("name") or "").strip().upper()
-        comp_type = NAME_MAP.get(raw_name, raw_name)
-        if comp_type in KNOWN_TYPES:
-            available_types.add(comp_type)
-
-    existing_types = {
-        c.type.value if hasattr(c.type, "value") else c.type
-        for c in db.query(Competition).filter(Competition.season_id == season.id)
-    }
-    return sorted(available_types - existing_types)
+    return ensure_competitions(db, season, client.list_competitions())

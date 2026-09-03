@@ -14,7 +14,7 @@ from app.models.competition import Competition, CompetitionPhase, MatchResult
 from app.models.fanta_team import FantaTeam
 from app.models.season import Season
 from app.services.leghe_client import LegheClient
-from app.services.leghe_competition_sync import missing_competition_types
+from app.services.leghe_competition_sync import ensure_competitions
 
 GIORNATA_RE = re.compile(r"(\d+)ª\s+Giornata\s+lega", re.IGNORECASE)
 GOALS_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
@@ -105,11 +105,14 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
     client.login()
 
     all_leghe_comps = client.list_competitions()
-    report = {
-        t: {"error": "competizione non ancora creata — creala da Gestione Squadre"}
-        for t in missing_competition_types(db, season, all_leghe_comps)
-        if t != "SILVER"  # mai coperta da questa sync, vedi commento sotto
-    }
+    # Crea (se mancano) e aggancia tutte le competizioni note trovate su
+    # leghe.fantacalcio.it (Silver inclusa: serve comunque ad altre sync,
+    # anche se questa non la usa mai — vedi filtro sotto) — cosi' una
+    # comparsa a stagione in corso (es. UEFA) viene coperta gia' in questo
+    # stesso giro.
+    ensured = ensure_competitions(db, season, all_leghe_comps)
+    newly_created = set(ensured["created"])
+    report = {}
 
     query = db.query(Competition).filter(
         Competition.season_id == season.id,
@@ -182,6 +185,7 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
             report[comp_type] = {
                 "matches_imported": imported, "matches_updated": updated,
                 "teams_unmatched": sorted(unmatched),
+                "appena_creata": comp_type in newly_created,
             }
         except Exception as e:
             db.rollback()

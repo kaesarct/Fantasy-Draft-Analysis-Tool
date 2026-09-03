@@ -66,6 +66,10 @@ function slugUsername(name: string): string {
         <div class="card status-msg error mb-4">{{ error() }}</div>
       }
 
+      @if (preview()?.competitions_created?.length) {
+        <div class="card status-msg mb-4">✅ Competizioni create: {{ preview().competitions_created.join(', ') }}</div>
+      }
+
       @if (report(); as r) {
         <div class="card status-msg mb-4" [class.error]="r.errors.length">
           <div>✅ Squadre collegate: {{ r.teams_linked }} (nuove: {{ r.teams_created }}, rinominate: {{ r.teams_renamed }}) · Allenatori creati: {{ r.allenatori_created }} (email aggiornate: {{ r.allenatori_email_aggiornati }}) · Associazioni squadra-allenatore: {{ r.coaches_assigned }}</div>
