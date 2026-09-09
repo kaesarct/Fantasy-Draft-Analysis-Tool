@@ -53,7 +53,7 @@ const PHASE_LABELS: Record<string, string> = {
         <div class="season-disclaimer">⚠️ {{ seasonDisclaimer() }}</div>
       }
 
-      <p-tabView [(activeIndex)]="activeTab" (activeIndexChange)="onTabChange($event)">
+      <p-tabView [scrollable]="true" [(activeIndex)]="activeTab" (activeIndexChange)="onTabChange($event)">
         @for (tab of tabs(); track tab.type) {
           <p-tabPanel [header]="tab.label">
             @if (loading()) {
