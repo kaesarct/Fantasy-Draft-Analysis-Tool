@@ -242,6 +242,23 @@ def _team_standings_summary(db: Session, team: FantaTeam) -> list[dict]:
         if not comp:
             continue
         seen_comp_ids.add(comp_id)
+        is_cup = comp.type not in MAIN_LEAGUE_TYPES and comp.type != "SILVER"
+        if is_cup:
+            # Import storici piu' vecchi hanno salvato qui un piazzamento di
+            # solo girone per alcune coppe (mai piu' aggiornato dopo
+            # l'eliminazione diretta): se esistono MatchResult di fase
+            # a eliminazione diretta, il tabellone e' la fonte corretta,
+            # altrimenti questa riga di girone resta l'unico dato disponibile.
+            cup_result = _cup_standing_for_team(db, comp, team.id)
+            if cup_result:
+                result.append({
+                    "competition_id": comp_id,
+                    "competition_type": comp.type,
+                    "rank": cup_result["rank"],
+                    "total_teams": cup_result["total_teams"],
+                    "is_partial_data": False,
+                })
+                continue
         all_rows = db.query(CompetitionStanding).filter(
             CompetitionStanding.competition_id == comp_id,
             CompetitionStanding.match_day == s.match_day,
