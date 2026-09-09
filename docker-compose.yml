@@ -43,6 +43,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-43200}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DB_OPS_PASSWORD_HASH: ${DB_OPS_PASSWORD_HASH:-}
+      ALLOW_DB_RESTORE: ${ALLOW_DB_RESTORE:-false}
     ports:
       - "8000:8000"
     volumes:

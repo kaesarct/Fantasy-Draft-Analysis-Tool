@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
@@ -410,5 +410,20 @@ export class ApiService {
   syncLegheMatchdayScores(seasonId: number): Observable<any> {
     const params = new HttpParams().set('season_id', seasonId);
     return this.http.post<any>(`${this.base}/leghe-sync/sync-matchday-scores`, {}, { params });
+  }
+
+  // ── Dump/restore DB (Admin) ──────────────────────────────────
+  dumpDatabase(password: string): Observable<HttpResponse<Blob>> {
+    return this.http.post(`${this.base}/admin/db/dump`, { password }, {
+      responseType: 'blob',
+      observe: 'response',
+    });
+  }
+
+  restoreDatabase(password: string, file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('password', password);
+    formData.append('file', file);
+    return this.http.post<any>(`${this.base}/admin/db/restore`, formData);
   }
 }

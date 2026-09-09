@@ -268,6 +268,7 @@ export class AppComponent implements OnInit {
     { label: 'Mercato',     route: '/admin/mercato', icon: '🔄' },
     { label: 'Coerenza Silver', route: '/admin/coerenza-silver', icon: '⚖️' },
     { label: 'Sync leghe.fc.it', route: '/admin/leghe-sync', icon: '🔗' },
+    { label: 'Dump/restore DB', route: '/admin/backup', icon: '💾' },
   ];
 
   version = signal('…');

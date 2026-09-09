@@ -45,6 +45,8 @@ services:
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-43200}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       APP_VERSION: ${APP_VERSION:-dev}
+      DB_OPS_PASSWORD_HASH: ${DB_OPS_PASSWORD_HASH:-}
+      ALLOW_DB_RESTORE: ${ALLOW_DB_RESTORE:-false}
     volumes:
       - ./backend/downloads:/app/downloads
       - ./backend/uploads:/app/uploads

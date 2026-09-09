@@ -26,6 +26,7 @@ La **Fantacalcio Platform** è una moderna applicazione web full-stack progettat
 - **Infortuni e Sostituzioni**: Tracking dei rientri previsti e gestione delle sostituzioni temporanee per infortuni prolungati (≥8 settimane). Gli infortunati Serie A (ufficiali fantacalcio.it) sono raggruppati per squadra con sezioni collassabili, una barra di stemmi in alto per saltare direttamente alla squadra desiderata e un bottone "torna su" per tornare alla barra.
 - **Premio Goku & Premio Oscar**: pagina pubblica (nessun login richiesto) con il punteggio più alto/basso di giornata della stagione corrente, lo storico dal 2018/19 e il record assoluto in evidenza. Sotto Admin, una sezione "Coerenza Silver" segnala eventuali discrepanze tra la classifica Silver e quella del campionato di appartenenza (Gold/Bronze/Carbon) di ogni squadra.
 - **Sync squadre/allenatori da leghe.fantacalcio.it**: sotto Admin, da usare una volta l'anno a inizio stagione — scarica i partecipanti reali dalla lega su leghe.fantacalcio.it e propone il collegamento a squadre/allenatori già presenti nel nostro DB. Per una squadra nuova (tipico a inizio stagione, prima che le squadre dell'anno vengano ricreate) permette anche di ereditare l'identità (lineage) da una squadra di stagioni passate, invece di partire scollegata dallo storico. Salva l'id squadra esterno per future sincronizzazioni automatiche. Crea e aggancia in automatico ogni competizione trovata su leghe.fantacalcio.it (Gold/Bronze/Carbon/Ciempions/Coppa Italia/Euro Cup/Silver, incluse quelle che compaiono più avanti nella stagione come UEFA) — sia al caricamento squadre/allenatori sia ad ogni sync di routine (voti, quotazioni, punteggi, risultati), senza bisogno di crearle a mano da Gestione Squadre. Permette due tipi di sync: i punteggi reali di giornata (fonte principale del Premio Goku/Oscar, copre anche Silver) e, quando serve l'accoppiamento partita/gol da fasce, il calendario completo via Excel.
+- **Dump e restore del DB**: sotto Admin, permette di scaricare un dump completo del DB (tipicamente da prod) e ricaricarlo in un altro ambiente (tipicamente staging), utile quando qualcosa funziona in un ambiente ma non si riesce a riprodurlo nell'altro. Protetto dal login admin più una password dedicata (hash bcrypt in `.env`, mai in chiaro). Il restore, essendo distruttivo (sovrascrive interamente il DB dell'ambiente su cui gira), è inoltre disabilitato di default per ambiente e va abilitato esplicitamente (`ALLOW_DB_RESTORE=true`) solo dove serve davvero riceverlo.
 
 ## 🐳 Installazione rapida con Docker (Raccomandata)
 
@@ -61,6 +62,10 @@ docker compose exec backend python -m app.services.auth_service "la-tua-password
 
 Inserisci in `.env`: `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`. Senza
 questi valori l'endpoint di login rifiuta sempre le credenziali.
+
+Per la sezione Admin "Dump e restore DB" genera allo stesso modo una password dedicata
+(`DB_OPS_PASSWORD_HASH`, stesso comando `auth_service` sopra) e, solo negli ambienti dove
+serve davvero ricevere un restore (es. staging, mai in prod), imposta `ALLOW_DB_RESTORE=true`.
 
 ### 3. Avvia i servizi
 

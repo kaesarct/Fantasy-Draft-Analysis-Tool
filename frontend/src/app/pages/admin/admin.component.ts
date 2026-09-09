@@ -41,6 +41,7 @@ interface PendingMerge {
         <a routerLink="/admin/mercato" class="section-link">🔄 Mercato (scambi, riparazione invernale) →</a>
         <a routerLink="/admin/coerenza-silver" class="section-link">⚖️ Coerenza Silver (discrepanze classifiche) →</a>
         <a routerLink="/admin/leghe-sync" class="section-link">🔗 Sync squadre/allenatori leghe.fantacalcio.it →</a>
+        <a routerLink="/admin/backup" class="section-link">💾 Dump e restore DB →</a>
       </div>
 
       @if (message()) {

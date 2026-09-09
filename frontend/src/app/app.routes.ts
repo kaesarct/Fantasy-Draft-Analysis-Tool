@@ -93,6 +93,12 @@ export const routes: Routes = [
       import('./pages/admin-leghe-sync/admin-leghe-sync.component').then(m => m.AdminLegheSyncComponent),
   },
   {
+    path: 'admin/backup',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/admin-backup/admin-backup.component').then(m => m.AdminBackupComponent),
+  },
+  {
     path: 'login',
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),

@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 30  # 30 giorni
     cookie_secure: bool = True
 
+    # Dump/restore DB (Admin) — password aggiuntiva oltre al login admin,
+    # hash bcrypt (stesso meccanismo di admin_password_hash, generato con
+    # `python -m app.services.auth_service <password>"). Il restore va
+    # abilitato esplicitamente per ambiente: di default disattivato, cosi'
+    # un tentativo per sbaglio in prod fallisce comunque.
+    db_ops_password_hash: str = ""
+    allow_db_restore: bool = False
+
     @property
     def database_url(self) -> str:
         return (
