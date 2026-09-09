@@ -214,6 +214,7 @@ def sync_serie_a_injuries(db: Session) -> dict:
                 team_name=entry["team_name"],
                 player_id=_match_player_id(db, entry["player_name"]),
                 description=entry["description"],
+                logo_url=entry.get("logo_url"),
                 first_seen_at=now,
                 last_seen_at=now,
                 last_updated_at=now,
@@ -226,6 +227,7 @@ def sync_serie_a_injuries(db: Session) -> dict:
             created += 1
         elif report.description != entry["description"]:
             report.description = entry["description"]
+            report.logo_url = entry.get("logo_url")
             report.last_updated_at = now
             report.last_seen_at = now
             db.add(SerieAInjuryDescription(
@@ -233,6 +235,7 @@ def sync_serie_a_injuries(db: Session) -> dict:
             ))
             updated += 1
         else:
+            report.logo_url = entry.get("logo_url")
             report.last_seen_at = now
             unchanged += 1
 

@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
@@ -107,7 +107,7 @@ import { AuthService } from '../../core/services/auth.service';
         </div>
       }
 
-      <div class="section-title">🩺 Infortunati Serie A (ufficiale fantacalcio.it)</div>
+      <div class="section-title" id="seriea-top">🩺 Infortunati Serie A (ufficiale fantacalcio.it)</div>
       @if (auth.isAuthenticated()) {
         <div class="actions-bar mb-3">
           <button pButton label="🔄 Sincronizza" size="small" [loading]="syncingSerieA()" (click)="syncSerieA()"></button>
@@ -124,10 +124,32 @@ import { AuthService } from '../../core/services/auth.service';
       @if (loadingSerieA()) {
         <p-skeleton height="60px" styleClass="mb-2" />
       } @else {
+        @if (serieAGrouped().length) {
+          <div class="seriea-team-nav mb-3">
+            @for (group of serieAGrouped(); track group.team_name) {
+              <button
+                class="seriea-team-nav-btn"
+                [title]="group.team_name"
+                (click)="goToSerieATeam(group.team_name)"
+              >
+                @if (group.players[0].logo_url) {
+                  <img [src]="group.players[0].logo_url" [alt]="group.team_name" />
+                } @else {
+                  <span class="seriea-team-nav-fallback">{{ group.team_name.slice(0, 3) }}</span>
+                }
+              </button>
+            }
+          </div>
+        }
+
         <div class="seriea-groups mb-4">
           @for (group of serieAGrouped(); track group.team_name) {
-            <div class="seriea-team-group">
-              <div class="seriea-team-name">{{ group.team_name }}</div>
+            <div class="seriea-team-group" [id]="'seriea-team-' + slug(group.team_name)">
+              <div class="seriea-team-name collapsible" (click)="toggleSerieATeam(group.team_name)">
+                <span class="collapse-arrow" [class.collapsed]="isSerieATeamCollapsed(group.team_name)">▾</span>
+                {{ group.team_name }}
+              </div>
+              @if (!isSerieATeamCollapsed(group.team_name)) {
               @for (p of group.players; track p.id) {
                 <div class="seriea-player-row">
                   <div class="seriea-player-main">
@@ -154,6 +176,7 @@ import { AuthService } from '../../core/services/auth.service';
                     </div>
                   }
                 </div>
+              }
               }
             </div>
           }
@@ -209,6 +232,10 @@ import { AuthService } from '../../core/services/auth.service';
         }
       </p-dialog>
     </div>
+
+    @if (showBackToTop()) {
+      <button class="back-to-top-btn" title="Torna alla lista squadre" (click)="scrollToSerieATop()">⬆</button>
+    }
   `,
   styles: [`
     .page-container { padding: 28px 32px; max-width: 1280px; margin: 0 auto; }
@@ -267,12 +294,35 @@ import { AuthService } from '../../core/services/auth.service';
 
     .mb-3 { margin-bottom: 16px; }
 
+    .seriea-team-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+    .seriea-team-nav-btn {
+      width: 40px; height: 40px; padding: 4px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color); background: var(--bg-card); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: border-color var(--transition);
+    }
+    .seriea-team-nav-btn:hover { border-color: var(--accent-blue); }
+    .seriea-team-nav-btn img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .seriea-team-nav-fallback { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+
     .seriea-groups { display: flex; flex-direction: column; gap: 14px; }
     .seriea-team-group {
       background: var(--bg-card); border: 1px solid var(--border-color);
       border-radius: var(--radius-md); padding: 14px 18px;
+      scroll-margin-top: 16px;
     }
     .seriea-team-name { font-weight: 800; font-size: 13px; margin-bottom: 10px; letter-spacing: .02em; }
+    .seriea-team-name.collapsible { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+    .collapse-arrow { display: inline-block; transition: transform var(--transition); }
+    .collapse-arrow.collapsed { transform: rotate(-90deg); }
+
+    .back-to-top-btn {
+      position: fixed; bottom: 24px; right: 24px; z-index: 50;
+      width: 44px; height: 44px; border-radius: 50%;
+      border: 1px solid var(--border-color); background: var(--bg-elevated);
+      color: var(--text-primary); font-size: 18px; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    }
+    .back-to-top-btn:hover { border-color: var(--accent-blue); }
     .seriea-player-row { padding: 8px 0; border-top: 1px solid var(--border-subtle); }
     .seriea-player-row:first-of-type { border-top: none; padding-top: 0; }
     .seriea-player-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
@@ -285,7 +335,7 @@ import { AuthService } from '../../core/services/auth.service';
     .seriea-history-row { display: flex; gap: 10px; align-items: baseline; }
   `],
 })
-export class InjuriesComponent implements OnInit {
+export class InjuriesComponent implements OnInit, OnDestroy {
   injuries = signal<any[]>([]);
   loading = signal(true);
   currentSeasonId = signal<number | null>(null);
@@ -311,6 +361,8 @@ export class InjuriesComponent implements OnInit {
   syncingSerieA = signal(false);
   showSerieAArchive = false;
   expandedSerieA = signal<Set<number>>(new Set());
+  collapsedSerieATeams = signal<Set<string>>(new Set());
+  showBackToTop = signal(false);
 
   serieAGrouped = computed(() => {
     const groups = new Map<string, any[]>();
@@ -340,6 +392,13 @@ export class InjuriesComponent implements OnInit {
       error: () => this.loadInjuries(),
     });
     this.loadSerieAInjuries();
+
+    this.scrollContainer = document.querySelector('.main-content');
+    this.scrollContainer?.addEventListener('scroll', this.onScroll, { passive: true });
+  }
+
+  ngOnDestroy() {
+    this.scrollContainer?.removeEventListener('scroll', this.onScroll);
   }
 
   loadSerieAInjuries() {
@@ -366,6 +425,39 @@ export class InjuriesComponent implements OnInit {
     if (set.has(id)) set.delete(id); else set.add(id);
     this.expandedSerieA.set(set);
   }
+
+  slug(teamName: string): string {
+    return teamName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  isSerieATeamCollapsed(teamName: string): boolean {
+    return this.collapsedSerieATeams().has(teamName);
+  }
+
+  toggleSerieATeam(teamName: string) {
+    const set = new Set(this.collapsedSerieATeams());
+    if (set.has(teamName)) set.delete(teamName); else set.add(teamName);
+    this.collapsedSerieATeams.set(set);
+  }
+
+  goToSerieATeam(teamName: string) {
+    const set = new Set(this.collapsedSerieATeams());
+    set.delete(teamName);
+    this.collapsedSerieATeams.set(set);
+    setTimeout(() => {
+      document.getElementById('seriea-team-' + this.slug(teamName))
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  scrollToSerieATop() {
+    document.getElementById('seriea-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  private scrollContainer: Element | null = null;
+  private onScroll = () => {
+    this.showBackToTop.set((this.scrollContainer?.scrollTop ?? 0) > 400);
+  };
 
   syncSerieA() {
     this.syncingSerieA.set(true);

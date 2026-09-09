@@ -35,6 +35,7 @@ def list_active(db: Session = Depends(get_db)):
             "team_name": r.team_name,
             "player_id": r.player_id,
             "description": r.description,
+            "logo_url": r.logo_url,
             "first_seen_at": r.first_seen_at,
             "last_seen_at": r.last_seen_at,
             "last_updated_at": r.last_updated_at,

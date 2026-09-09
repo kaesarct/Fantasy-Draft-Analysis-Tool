@@ -95,6 +95,8 @@ def get_serie_a_injuries() -> list[dict]:
         team_name = team_el.get_text(strip=True) if team_el else None
         if not team_name:
             continue
+        logo_el = card.select_one("figure.team-badge img")
+        logo_url = logo_el.get("src") if logo_el else None
         for li in card.select("ul.unstyled > li"):
             name_el = li.select_one("strong.item-name")
             desc_el = li.select_one("div.item-description")
@@ -103,6 +105,7 @@ def get_serie_a_injuries() -> list[dict]:
                     "team_name": team_name,
                     "player_name": name_el.get_text(strip=True),
                     "description": desc_el.get_text(strip=True),
+                    "logo_url": logo_url,
                 })
 
     return result

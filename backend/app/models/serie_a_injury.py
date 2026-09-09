@@ -14,6 +14,7 @@ class SerieAInjuryReport(Base):
     team_name = Column(String(100), nullable=False)
     player_id = Column(Integer, ForeignKey("players.id"), nullable=True)  # match best-effort
     description = Column(Text, nullable=False)
+    logo_url = Column(String(255), nullable=True)  # stemma squadra, scrapato insieme all'infortunio
     first_seen_at = Column(DateTime, default=datetime.utcnow)
     last_seen_at = Column(DateTime, default=datetime.utcnow)
     last_updated_at = Column(DateTime, default=datetime.utcnow)

@@ -61,6 +61,7 @@ def init_db():
     _migrate_dedupe_players()
     _migrate_merge_duplicate_teams()
     _migrate_seed_season_awards()
+    _migrate_add_serie_a_injury_logo()
 
 
 def _migrate_add_lineage_id():
@@ -128,6 +129,16 @@ def _migrate_add_leghe_team_id():
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_fanta_team_leghe_team_id "
             "ON fanta_teams(leghe_team_id) WHERE leghe_team_id IS NOT NULL"
+        ))
+
+
+def _migrate_add_serie_a_injury_logo():
+    # create_all non altera tabelle esistenti: la colonna va aggiunta a mano
+    # sui DB gia' creati (idempotente grazie a IF NOT EXISTS).
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE serie_a_injury_reports ADD COLUMN IF NOT EXISTS logo_url VARCHAR(255)"
         ))
 
 
