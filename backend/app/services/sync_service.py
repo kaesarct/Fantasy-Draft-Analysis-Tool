@@ -113,18 +113,25 @@ def sync_votes(db: Session, season_id: int, match_day: int | None = None) -> dic
         # risponde 200 OK con un Excel senza dati utilizzabili.
         return {"ok": False, "message": f"Nessun voto disponibile per la giornata {day}"}
 
-    # Solo righe con ID numerico
+    # Solo righe con ID numerico (esclude le righe di intestazione ripetute
+    # per ogni squadra: "Cod./Ruolo/Nome/Voto/Gf/Gs/Rp/Rs/Rf/Au/Amm/Esp/Ass").
     df = df[df.iloc[:, 0].astype(str).str.isdigit()]
+
+    def _int(v) -> int:
+        return int(v) if pd.notna(v) else 0
 
     saved = 0
     for _, row in df.iterrows():
         try:
             fanta_id = int(row.values[0])
-            vote_val = row.values[5] if len(row.values) > 5 else None
-            if vote_val == "sv" or pd.isna(vote_val):
+            vote_val = row.values[3]
+            if pd.isna(vote_val) or str(vote_val).strip().lower() == "sv":
                 vote = None
             else:
-                vote = float(vote_val)
+                # Un voto provvisorio (calcolato con una formula statistica in
+                # attesa della pagella ufficiale) e' segnato con un asterisco
+                # finale, es. "6*": il numero resta comunque utilizzabile.
+                vote = float(str(vote_val).rstrip("*"))
         except Exception:
             continue
 
@@ -141,13 +148,22 @@ def sync_votes(db: Session, season_id: int, match_day: int | None = None) -> dic
             )
             .first()
         )
+        score_data = dict(
+            vote=vote,
+            goals=_int(row.values[4]),           # Gf
+            own_goals=_int(row.values[9]),        # Au
+            yellow_cards=_int(row.values[10]),    # Amm
+            red_cards=_int(row.values[11]),       # Esp
+            assists=_int(row.values[12]),         # Ass
+            penalties_saved=_int(row.values[6]),  # Rp
+            penalties_missed=_int(row.values[7]), # Rs
+        )
         if not score:
-            score = PlayerMatchScore(
-                player_id=player.id, season_id=season_id, match_day=day, vote=vote
-            )
+            score = PlayerMatchScore(player_id=player.id, season_id=season_id, match_day=day, **score_data)
             db.add(score)
         else:
-            score.vote = vote
+            for k, v in score_data.items():
+                setattr(score, k, v)
         saved += 1
 
     db.commit()
