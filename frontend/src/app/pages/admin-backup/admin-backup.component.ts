@@ -48,7 +48,13 @@ import { ApiService } from '../../core/services/api.service';
         </div>
 
         <div class="restore-row">
-          <input #fileInput type="file" accept=".sql" (change)="onFileSelected($event)" />
+          <input #fileInput type="file" accept=".sql" (change)="onFileSelected($event)" [hidden]="!!selectedFile()" />
+          @if (selectedFile(); as f) {
+            <span class="selected-file">
+              📄 {{ f.name }}
+              <button class="clear-file-btn" type="button" title="Cambia file" (click)="clearFile(fileInput)">✕</button>
+            </span>
+          }
           <button
             pButton
             label="Ripristina"
@@ -79,6 +85,12 @@ import { ApiService } from '../../core/services/api.service';
     .status-msg.error { color: var(--text-negative, #e05260); }
 
     .actions-row, .restore-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .selected-file { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+    .clear-file-btn {
+      background: none; border: none; cursor: pointer; color: var(--text-muted);
+      font-size: 13px; padding: 2px 4px; line-height: 1;
+    }
+    .clear-file-btn:hover { color: var(--text-negative, #e05260); }
   `],
 })
 export class AdminBackupComponent {
@@ -94,6 +106,11 @@ export class AdminBackupComponent {
   onFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     this.selectedFile.set(input.files?.[0] ?? null);
+  }
+
+  clearFile(fileInput: HTMLInputElement) {
+    this.selectedFile.set(null);
+    fileInput.value = '';
   }
 
   downloadDump() {
