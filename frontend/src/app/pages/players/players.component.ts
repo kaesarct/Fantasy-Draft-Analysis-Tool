@@ -58,11 +58,11 @@ import { ApiService } from '../../core/services/api.service';
           <div class="table-scroll">
             <div class="table-header">
               <span style="width:40px">#</span>
-              <span style="flex:1">Giocatore</span>
-              <span style="width:80px;text-align:center">Ruolo</span>
-              <span style="width:100px;text-align:right">Quotazione</span>
-              <span style="width:80px;text-align:right">FVM</span>
-              <span style="width:70px;text-align:right">Diff.</span>
+              <span style="flex:1" class="sortable" (click)="sortBy('name')">Giocatore{{ sortArrow('name') }}</span>
+              <span style="width:80px;text-align:center" class="sortable" (click)="sortBy('role')">Ruolo{{ sortArrow('role') }}</span>
+              <span style="width:100px;text-align:right" class="sortable" (click)="sortBy('price')">Quotazione{{ sortArrow('price') }}</span>
+              <span style="width:80px;text-align:right" class="sortable" (click)="sortBy('fvm')">FVM{{ sortArrow('fvm') }}</span>
+              <span style="width:70px;text-align:right" class="sortable" (click)="sortBy('diff')">Diff.{{ sortArrow('diff') }}</span>
             </div>
             @for (p of filtered(); track p.id; let i = $index) {
               <a [routerLink]="['/players', p.id]" class="player-row">
@@ -124,6 +124,8 @@ import { ApiService } from '../../core/services/api.service';
       border-bottom: 1px solid var(--border-color);
       min-width: 480px;
     }
+    .table-header .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    .table-header .sortable:hover { color: var(--text-primary); }
     .player-row {
       display: flex; align-items: center; gap: 8px;
       padding: 12px 16px; border-bottom: 1px solid var(--border-subtle);
@@ -148,6 +150,9 @@ export class PlayersComponent implements OnInit {
 
   seasons = signal<any[]>([]);
   selectedSeasonId: number | null = null;
+
+  sortField: 'name' | 'role' | 'price' | 'fvm' | 'diff' | null = null;
+  sortAsc = true;
 
   roleOptions = [
     { label: 'Portiere', value: 'P' },
@@ -192,6 +197,46 @@ export class PlayersComponent implements OnInit {
     if (this.selectedRole) {
       result = result.filter(p => p.roles.includes(this.selectedRole));
     }
-    this.filtered.set(result);
+    this.filtered.set(this.applySort(result));
+  }
+
+  sortBy(field: 'name' | 'role' | 'price' | 'fvm' | 'diff') {
+    if (this.sortField === field) {
+      this.sortAsc = !this.sortAsc;
+    } else {
+      this.sortField = field;
+      // Testo in ordine alfabetico crescente di default, numeri dal piu' alto
+      // al piu' basso (piu' utile per prezzo/FVM: si cercano i top per valore).
+      this.sortAsc = field === 'name' || field === 'role';
+    }
+    this.filtered.set(this.applySort(this.filtered()));
+  }
+
+  sortArrow(field: string): string {
+    if (this.sortField !== field) return '';
+    return this.sortAsc ? ' ▲' : ' ▼';
+  }
+
+  private applySort(list: any[]): any[] {
+    const field = this.sortField;
+    if (!field) return list;
+    const dir = this.sortAsc ? 1 : -1;
+    const byMatchingSeason = !!this.selectedSeasonId;
+    const valueOf = (p: any): number | string => {
+      switch (field) {
+        case 'name': return p.name?.toLowerCase() ?? '';
+        case 'role': return p.roles?.[0] ?? '';
+        case 'price': return byMatchingSeason ? (p.price ?? -Infinity) : (p.price_max ?? -Infinity);
+        case 'fvm': return byMatchingSeason ? (p.fvm ?? -Infinity) : (p.fvm_max ?? -Infinity);
+        case 'diff': return byMatchingSeason ? (p.price_diff ?? -Infinity) : (p.diff_max ?? -Infinity);
+        default: return '';
+      }
+    };
+    return [...list].sort((a, b) => {
+      const va = valueOf(a), vb = valueOf(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
   }
 }
