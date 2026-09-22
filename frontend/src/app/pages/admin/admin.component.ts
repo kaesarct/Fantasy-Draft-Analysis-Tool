@@ -136,6 +136,15 @@ interface PendingMerge {
           <button pButton label="Sync quotazioni" size="small" [disabled]="!syncSeasonId" [loading]="syncingPrices()" (click)="runSyncPrices()"></button>
           <button pButton label="Sync voti" size="small" [disabled]="!syncSeasonId" [loading]="syncingVotes()" (click)="runSyncVotes()"></button>
           <button pButton label="Verifica recupero" size="small" [disabled]="!syncSeasonId" [loading]="checkingRecovery()" (click)="runCheckRecovery()"></button>
+          <button
+            pButton
+            label="Resync stagione (quotazioni + voti, tutte le giornate)"
+            size="small"
+            class="p-button-outlined"
+            [disabled]="!syncSeasonId"
+            [loading]="resyncingSeason()"
+            (click)="runResyncSeason()"
+          ></button>
         </div>
         <p class="text-muted" style="font-size:12px; margin: 0;">
           Il campo "Giornata" è vuoto per default: se lo lasci vuoto viene usata la giornata rilevata automaticamente (mostrata sopra).
@@ -446,6 +455,7 @@ export class AdminComponent implements OnInit {
   syncingPrices = signal(false);
   syncingVotes = signal(false);
   checkingRecovery = signal(false);
+  resyncingSeason = signal(false);
   conclusionReady = signal(false);
   conclusionMissing = signal<string[]>([]);
   concludingSeason = signal(false);
@@ -618,6 +628,25 @@ export class AdminComponent implements OnInit {
       error: err => {
         this.syncingVotes.set(false);
         this.setMessage(err.error?.detail || 'Errore durante il sync voti.', true);
+      },
+    });
+  }
+
+  runResyncSeason() {
+    if (!this.syncSeasonId) return;
+    this.resyncingSeason.set(true);
+    this.api.resyncSeason(this.syncSeasonId).subscribe({
+      next: res => {
+        this.resyncingSeason.set(false);
+        const votesSaved = (res.votes ?? []).reduce((sum: number, v: any) => sum + (v.saved ?? 0), 0);
+        this.setMessage(
+          `Resync completato (giornata ${res.match_day}): quotazioni ${res.prices?.created ?? 0} nuovi/${res.prices?.updated ?? 0} aggiornati, voti ${votesSaved} salvati su ${res.votes?.length ?? 0} giornate.`,
+          false,
+        );
+      },
+      error: err => {
+        this.resyncingSeason.set(false);
+        this.setMessage(err.error?.detail || 'Errore durante il resync della stagione.', true);
       },
     });
   }

@@ -227,6 +227,12 @@ export class ApiService {
     return this.http.post(`${this.base}/sync/votes`, null, { params });
   }
 
+  resyncSeason(seasonId: number): Observable<any> {
+    return this.http.post(`${this.base}/sync/resync-season`, null, {
+      params: new HttpParams().set('season_id', seasonId),
+    });
+  }
+
   syncFormazioni(seasonId: number): Observable<any> {
     return this.http.post(`${this.base}/sync/formazioni`, null, {
       params: new HttpParams().set('season_id', seasonId),
