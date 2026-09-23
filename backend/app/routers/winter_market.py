@@ -5,9 +5,17 @@ qui si carica un unico file con la rosa finale di tutte le squadre della
 lega e il sistema calcola svincoli/acquisti per differenza rispetto alla
 rosa attiva attuale — nessuna offerta/competizione gestita dal sistema.
 
+Usato anche per il caricamento iniziale di una rosa lega (nessuna riga attiva
+ancora presente = tutto risulta "acquistato", nessun rilascio) — stesso
+meccanismo, non serve un endpoint separato.
+
 Formati supportati: CSV/dat (colonne tollerante a varianti di nome), Excel,
-e l'HTML storico "rosa squadre" (tabelle nidificate per squadra, verificato
-su un file reale — vedi _parse_html_rosters).
+l'HTML storico "rosa squadre" (tabelle nidificate per squadra, verificato
+su un file reale — vedi _parse_html_rosters), e il CSV "per ID" esportato da
+leghe.fantacalcio.it (squadra/fanta_id/prezzo senza intestazione, righe "$,$,$"
+tra una squadra e l'altra — vedi _parse_fanta_id_csv): piu' affidabile del
+formato per nome perche' il giocatore si riconosce per fanta_id, non per
+corrispondenza testuale.
 """
 import io
 import re
@@ -28,10 +36,12 @@ from app.services.sync_service import _match_player_id
 router = APIRouter(prefix="/winter-market", tags=["winter-market"])
 
 _TEAM_COLUMNS = ["squadra", "team", "fanta_team", "nome_squadra"]
-_PLAYER_COLUMNS = ["giocatore", "nome", "player", "nome_giocatore"]
+_PLAYER_COLUMNS = ["giocatore", "nome", "player", "nome_giocatore", "fanta_id"]
 _PRICE_COLUMNS = ["prezzo", "costo", "price", "quotazione"]
 _ROLE_COLUMNS = ["ruolo", "role", "r"]
 _VALID_ROLES = {"P", "D", "C", "A"}
+
+_TEAM_NAME_NORMALIZE_RE = re.compile(r"[-_]")
 
 # Formato "rosa squadre" storico (es. STAGIONI/*/tamarros *.html): una
 # <table> per squadra, prima riga <td colspan=3><strong>NOME</strong></td>,
@@ -75,12 +85,39 @@ def _pick_column(columns, candidates: list[str]) -> str | None:
     return None
 
 
+def _normalize_team_name(name: str) -> str:
+    return _TEAM_NAME_NORMALIZE_RE.sub(" ", name).strip().lower()
+
+
+def _parse_fanta_id_csv(content: bytes) -> pd.DataFrame | None:
+    """Export "per ID" da leghe.fantacalcio.it: CSV senza intestazione, 3
+    colonne (squadra, fanta_id del giocatore, prezzo), con una riga
+    letterale "$,$,$" a separare una squadra dalla successiva. Piu'
+    affidabile del formato per nome (nessuna ambiguita' di matching), ma
+    va riconosciuto esplicitamente perche' non ha intestazioni di colonna.
+    Ritorna None se il contenuto non rispetta questo formato."""
+    try:
+        df = pd.read_csv(io.BytesIO(content), header=None, names=["squadra", "fanta_id", "prezzo"])
+    except Exception:
+        return None
+    df = df[df["squadra"].astype(str) != "$"]
+    numeric_ids = pd.to_numeric(df["fanta_id"], errors="coerce")
+    if numeric_ids.isna().any() or df.empty:
+        return None
+    df = df.copy()
+    df["fanta_id"] = numeric_ids.astype(int)
+    return df
+
+
 def _read_file(file: UploadFile) -> pd.DataFrame:
     content = file.file.read()
     name = (file.filename or "").lower()
     if name.endswith(".html") or name.endswith(".htm"):
         return _parse_html_rosters(content)
     if name.endswith(".csv") or name.endswith(".dat"):
+        by_id = _parse_fanta_id_csv(content)
+        if by_id is not None:
+            return by_id
         return pd.read_csv(io.BytesIO(content), sep=None, engine="python")
     return pd.read_excel(io.BytesIO(content))
 
@@ -121,11 +158,12 @@ def reconcile_winter_market(
         )
 
     teams_by_name = {
-        t.name.strip().lower(): t
+        _normalize_team_name(t.name): t
         for t in db.query(FantaTeam).filter(
             FantaTeam.season_id == season_id, FantaTeam.league_id == league.id
         ).all()
     }
+    by_fanta_id = player_col == "fanta_id"
 
     rows_by_team: dict[int, list[tuple[int, float]]] = {}
     unmatched_teams: set[str] = set()
@@ -141,7 +179,7 @@ def reconcile_winter_market(
         except (TypeError, ValueError):
             continue
 
-        team = teams_by_name.get(team_name.lower())
+        team = teams_by_name.get(_normalize_team_name(team_name))
         if not team:
             if not team_name:
                 unmatched_teams.add(team_name)
@@ -154,12 +192,16 @@ def reconcile_winter_market(
             team = FantaTeam(name=team_name, season_id=season_id, league_id=league.id)
             db.add(team)
             db.flush()
-            teams_by_name[team_name.lower()] = team
+            teams_by_name[_normalize_team_name(team_name)] = team
             new_team_ids.add(team.id)
         row_role = str(row[role_col]).strip().upper() if role_col else None
         if row_role not in _VALID_ROLES:
             row_role = None
-        player_id = _match_player_id(db, player_name)
+        if by_fanta_id:
+            player = db.query(Player).filter(Player.fanta_id == int(float(row[player_col]))).first()
+            player_id = player.id if player else None
+        else:
+            player_id = _match_player_id(db, player_name)
         if not player_id and create_missing_players:
             if row_role is None:
                 unmatched_players.add(player_name)
