@@ -16,6 +16,43 @@ import { ApiService } from '../../core/services/api.service';
         </div>
       </div>
 
+      @if (globalStats()) {
+        <div class="stats-grid mb-4">
+          <div class="card stats-card">
+            <h4>🏆 Record Acquisti (Singolo Allenatore)</h4>
+            <div class="stats-roles">
+              @for (role of ['P', 'D', 'C', 'A']; track role) {
+                @if (globalStats().most_bought_per_role[role]) {
+                  <div class="stats-role-group">
+                    <div class="role-badge role-{{role}}">{{role}}</div>
+                    <div class="stats-info">
+                      <div class="player-name">{{ globalStats().most_bought_per_role[role].player_name }} <span class="stats-val">({{ globalStats().most_bought_per_role[role].count }}x)</span></div>
+                      <div class="al-name text-muted" style="font-size: 11px;">by {{ globalStats().most_bought_per_role[role].al_name }}</div>
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          </div>
+          <div class="card stats-card">
+            <h4>💸 Acquisti più costosi</h4>
+            <div class="stats-roles">
+              @for (role of ['P', 'D', 'C', 'A']; track role) {
+                @if (globalStats().most_expensive_per_role[role]) {
+                  <div class="stats-role-group">
+                    <div class="role-badge role-{{role}}">{{role}}</div>
+                    <div class="stats-info">
+                      <div class="player-name">{{ globalStats().most_expensive_per_role[role].player_name }} <span class="stats-val">{{ globalStats().most_expensive_per_role[role].max_price }} FM</span></div>
+                      <div class="al-name text-muted" style="font-size: 11px;">by {{ globalStats().most_expensive_per_role[role].al_name }}</div>
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          </div>
+        </div>
+      }
+
       <div class="allenatori-grid">
         @for (a of allenatori(); track a.id) {
           <a [routerLink]="['/allenatori', a.id]" class="allenatore-card">
@@ -57,14 +94,27 @@ import { ApiService } from '../../core/services/api.service';
     .al-info { flex: 1; }
     .al-name { font-weight: 700; font-size: 14px; }
     .al-username { font-size: 12px; }
+
+    .mb-4 { margin-bottom: 24px; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 768px) { .stats-grid { grid-template-columns: 1fr; } }
+    .stats-card { padding: 16px; }
+    .stats-card h4 { margin-top: 0; margin-bottom: 16px; font-size: 15px; font-weight: 700; color: var(--text-primary); }
+    .stats-roles { display: flex; flex-direction: column; gap: 14px; }
+    .stats-role-group { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; }
+    .stats-info { display: flex; flex-direction: column; gap: 2px; }
+    .player-name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .stats-val { color: var(--text-muted); font-size: 12px; font-weight: 600; }
   `],
 })
 export class TeamsComponent implements OnInit {
   allenatori = signal<any[]>([]);
+  globalStats = signal<any>(null);
 
   constructor(private api: ApiService) {}
 
   ngOnInit() {
     this.api.getAllenatori().subscribe({ next: d => this.allenatori.set(d) });
+    this.api.getGlobalAllenatoriStats().subscribe({ next: d => this.globalStats.set(d) });
   }
 }

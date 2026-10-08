@@ -299,6 +299,53 @@ def _team_standings_summary(db: Session, team: FantaTeam) -> list[dict]:
     return result
 
 
+@allenatori_router.get("/stats/global")
+def get_global_allenatori_stats(db: Session = Depends(get_db)):
+    rows = (
+        db.query(FantaRoster, FantaTeamCoach.allenatore_id, FantaAllenatore.display_name)
+        .join(FantaTeamCoach, FantaTeamCoach.fanta_team_id == FantaRoster.fanta_team_id)
+        .join(FantaAllenatore, FantaAllenatore.id == FantaTeamCoach.allenatore_id)
+        .all()
+    )
+    
+    stats_by_al_pl = {}
+    for r, al_id, al_name in rows:
+        if not r.player: continue
+        pl_id = r.player_id
+        role = r.role or r.player.role
+        name = r.player.name
+        
+        key = (al_id, pl_id)
+        if key not in stats_by_al_pl:
+            stats_by_al_pl[key] = {
+                "count": 0, "max_price": 0, "role": role, 
+                "player_name": name, "al_name": al_name,
+                "player_id": pl_id
+            }
+        stats_by_al_pl[key]["count"] += 1
+        price = r.purchase_price or 0
+        if price > stats_by_al_pl[key]["max_price"]:
+            stats_by_al_pl[key]["max_price"] = price
+
+    most_bought_per_role = {"P": None, "D": None, "C": None, "A": None}
+    most_expensive_per_role = {"P": None, "D": None, "C": None, "A": None}
+    
+    for role in ["P", "D", "C", "A"]:
+        role_stats = [s for s in stats_by_al_pl.values() if s["role"] == role]
+        if role_stats:
+            mb = max(role_stats, key=lambda s: s["count"])
+            me = max(role_stats, key=lambda s: s["max_price"])
+            if mb["count"] > 1:
+                most_bought_per_role[role] = mb
+            if me["max_price"] > 0:
+                most_expensive_per_role[role] = me
+                
+    return {
+        "most_bought_per_role": most_bought_per_role,
+        "most_expensive_per_role": most_expensive_per_role
+    }
+
+
 @allenatori_router.get("/{al_id}")
 def get_allenatore(al_id: int, db: Session = Depends(get_db)):
     a = db.query(FantaAllenatore).filter(FantaAllenatore.id == al_id).first()

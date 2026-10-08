@@ -58,6 +58,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/allenatori/${id}/players`, { params });
   }
 
+  getGlobalAllenatoriStats(): Observable<any> {
+    return this.http.get<any>(`${this.base}/allenatori/stats/global`);
+  }
+
   createAllenatore(data: { username: string; display_name: string; email?: string }): Observable<any> {
     return this.http.post(`${this.base}/allenatori`, data);
   }

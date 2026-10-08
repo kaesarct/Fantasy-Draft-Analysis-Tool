@@ -27,6 +27,44 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
           </div>
         </div>
 
+        <div class="section-title">🏆 Statistiche Acquisti</div>
+        <div class="stats-grid mb-4">
+          <div class="card stats-card">
+            <h4>Più acquistati (>2 volte)</h4>
+            <div class="stats-roles">
+              @for (role of ['P', 'D', 'C', 'A']; track role) {
+                @if (mostBoughtPlayers()[role].length > 0) {
+                  <div class="stats-role-group">
+                    <div class="role-badge role-{{role}}">{{role}}</div>
+                    <ul>
+                      @for (p of mostBoughtPlayers()[role]; track p.player_id) {
+                        <li>{{ p.player_name }} <span class="stats-val">({{ p.times }}x)</span></li>
+                      }
+                    </ul>
+                  </div>
+                }
+              }
+            </div>
+          </div>
+          <div class="card stats-card">
+            <h4>Acquisti più costosi</h4>
+            <div class="stats-roles">
+              @for (role of ['P', 'D', 'C', 'A']; track role) {
+                @if (mostExpensivePlayers()[role].length > 0) {
+                  <div class="stats-role-group">
+                    <div class="role-badge role-{{role}}">{{role}}</div>
+                    <ul>
+                      @for (p of mostExpensivePlayers()[role]; track p.player_id) {
+                        <li>{{ p.player_name }} <span class="stats-val">{{ p.maxPrice }} FM</span></li>
+                      }
+                    </ul>
+                  </div>
+                }
+              }
+            </div>
+          </div>
+        </div>
+
         <div class="section-title">🛡️ Storico squadre ({{ allenatore().teams.length }})</div>
         <div class="card mb-4 teams-table">
           @for (t of allenatore().teams; track t.team_id) {
@@ -134,6 +172,16 @@ const ROLE_ORDER = ['P', 'D', 'C', 'A'];
       color: var(--text-primary);
     }
     .acq-chip strong { color: var(--accent-green); }
+
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 768px) { .stats-grid { grid-template-columns: 1fr; } }
+    .stats-card { padding: 16px; }
+    .stats-card h4 { margin-top: 0; margin-bottom: 16px; font-size: 15px; font-weight: 700; color: var(--text-primary); }
+    .stats-roles { display: flex; flex-direction: column; gap: 14px; }
+    .stats-role-group { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; }
+    .stats-role-group ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+    .stats-role-group ul li { display: flex; align-items: center; gap: 6px; }
+    .stats-val { color: var(--text-muted); font-size: 12px; font-weight: 600; }
   `],
 })
 export class AllenatoreDetailComponent implements OnInit {
@@ -151,6 +199,38 @@ export class AllenatoreDetailComponent implements OnInit {
     const seen = new Map<number, string>();
     for (const t of a.teams) seen.set(t.season_id, t.season);
     return Array.from(seen.entries()).map(([value, label]) => ({ label, value }));
+  });
+
+  mostBoughtPlayers = computed(() => {
+    const byRole = { P: [], D: [], C: [], A: [] } as Record<string, any[]>;
+    for (const p of this.players()) {
+      const times = p.acquisitions.length;
+      if (times > 2) {
+        if (byRole[p.role]) {
+          byRole[p.role].push({ ...p, times });
+        }
+      }
+    }
+    for (const role of ROLE_ORDER) {
+      byRole[role] = byRole[role].sort((a, b) => b.times - a.times).slice(0, 3);
+    }
+    return byRole;
+  });
+
+  mostExpensivePlayers = computed(() => {
+    const byRole = { P: [], D: [], C: [], A: [] } as Record<string, any[]>;
+    for (const p of this.players()) {
+      const maxPrice = Math.max(...p.acquisitions.map((a: any) => a.purchase_price || 0), 0);
+      if (maxPrice > 0) {
+        if (byRole[p.role]) {
+          byRole[p.role].push({ ...p, maxPrice });
+        }
+      }
+    }
+    for (const role of ROLE_ORDER) {
+      byRole[role] = byRole[role].sort((a, b) => b.maxPrice - a.maxPrice).slice(0, 3);
+    }
+    return byRole;
   });
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
