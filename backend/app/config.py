@@ -51,8 +51,14 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        # Driver esplicito (psycopg2, l'unico installato — vedi requirements.txt):
+        # senza "+psycopg2" SQLAlchemy sceglie da solo il driver postgres in base
+        # alla versione installata, e versioni recenti (2.1.x) preferiscono il
+        # nuovo "psycopg" (v3, pacchetto diverso, non installato) invece del
+        # classico psycopg2 — un rebuild senza cache con "sqlalchemy>=2.0.0" non
+        # pinnato puo' quindi smettere di avviarsi da un giorno all'altro.
         return (
-            f"postgresql://{self.db_user}:{self.db_password}"
+            f"postgresql+psycopg2://{self.db_user}:{self.db_password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
 
