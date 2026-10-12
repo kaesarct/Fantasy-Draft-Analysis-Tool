@@ -43,6 +43,12 @@ import { AuthService } from '../../core/services/auth.service';
                 Quotazione attuale: {{ inj.current_price ?? 'n/d' }}
                 @if (!inj.is_active) { &nbsp;·&nbsp; rientrato }
               </span>
+              @if (inj.is_active && inj.return_signal) {
+                <span class="return-alert">🔔 Rientrato? Conferma con "Segna rientro"</span>
+              }
+              @if (auth.isAuthenticated() && inj.is_active) {
+                <button class="btn-sm btn-outline" (click)="markRecovered(inj)">Segna rientro</button>
+              }
             </div>
             @for (t of inj.teams; track t.roster_id) {
               <div class="team-row">
@@ -117,6 +123,7 @@ import { AuthService } from '../../core/services/auth.service';
     .inj-card.recovered { opacity: .7; }
     .inj-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
     .inj-name { font-weight: 700; font-size: 14px; }
+    .return-alert { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--accent-green); color: var(--accent-green); }
     .team-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; }
     .swap-done { display: flex; align-items: center; gap: 8px; font-weight: 600; }
     .btn-sm { padding: 5px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--border-color); }
@@ -183,6 +190,21 @@ export class InjurySwapsComponent implements OnInit {
     this.selInjury = inj;
     this.selTeam = team;
     this.dialogVisible = true;
+    if (this.seasonId) {
+      this.api.refreshInjurySwapPrices(this.seasonId).subscribe({
+        error: err => this.toast.add({ severity: 'warn', summary: 'Quotazioni non aggiornate', detail: err.error?.detail ?? 'Aggiornamento fallito.' }),
+      });
+    }
+  }
+
+  markRecovered(inj: any) {
+    this.confirm.confirm({
+      message: `Confermare il rientro di ${inj.player_name}? Il cambio resta contato nei ${this.maxSwaps()} disponibili, ma il sostituto torna a fine impiego.`,
+      accept: () => {
+        const today = new Date().toISOString().split('T')[0];
+        this.api.recoverPlayer(inj.injury_id, today).subscribe(() => this.load());
+      },
+    });
   }
 
   resetDialog() {

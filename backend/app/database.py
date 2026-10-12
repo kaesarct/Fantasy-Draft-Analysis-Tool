@@ -63,6 +63,15 @@ def init_db():
     _migrate_seed_season_awards()
     _migrate_add_serie_a_injury_logo()
     _migrate_add_temp_sub_injury_fields()
+    _migrate_add_injury_return_detected()
+
+
+def _migrate_add_injury_return_detected():
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE injury_players ADD COLUMN IF NOT EXISTS return_detected_at TIMESTAMP"
+        ))
 
 
 def _migrate_add_temp_sub_injury_fields():

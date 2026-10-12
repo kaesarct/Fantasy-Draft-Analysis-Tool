@@ -74,6 +74,9 @@ import { AuthService } from '../../core/services/auth.service';
                 @if (inj.qualifies_for_temp_sub && inj.is_active) {
                   <span class="badge badge-red">≥8 sett. — Sost. disponibile</span>
                 }
+                @if (inj.is_active && inj.return_signal) {
+                  <span class="badge badge-green">🔔 Rientrato? Conferma con "Segna rientro"</span>
+                }
                 @if (!inj.is_active) {
                   <span class="badge badge-green">✓ Recuperato {{ inj.confirmed_return }}</span>
                 }
@@ -576,8 +579,8 @@ export class InjuriesComponent implements OnInit, OnDestroy {
           const names = res.returned.map((p: any) => p.player_name).join(', ');
           this.toast.add({
             severity: 'success',
-            summary: `Rientri alla giornata ${res.match_day}`,
-            detail: `Sono tornati dall'infortunio: ${names}`,
+            summary: `Possibili rientri alla giornata ${res.match_day}`,
+            detail: `Rientro rilevato per: ${names}. Confermalo con "Segna rientro".`,
             life: 8000,
           });
         } else {

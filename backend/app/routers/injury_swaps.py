@@ -15,7 +15,10 @@ from app.models.fanta_team import FantaTeam, FantaRoster, FantaRosterTempSub
 from app.models.injury import InjuryPlayer
 from app.models.player import Player, PlayerSnapshot
 from app.models.season import Season
+from app.models.serie_a_injury import SerieAInjuryArchive, SerieAInjuryReport
 from app.services.auth_service import require_admin
+from app.services.fanta_client import fanta_client
+from app.services.sync_service import sync_prices
 
 router = APIRouter(prefix="/injury-swaps", tags=["injury-swaps"])
 
@@ -29,6 +32,36 @@ def _latest_snapshot(db: Session, player_id: int, season_id: int) -> PlayerSnaps
         .filter(PlayerSnapshot.player_id == player_id, PlayerSnapshot.season_id == season_id)
         .order_by(PlayerSnapshot.match_day.desc())
         .first()
+    )
+
+
+def _ensure_fresh_prices(db: Session, season_id: int) -> None:
+    """Se le quotazioni salvate sono piu' vecchie dell'ultima giornata su
+    fantacalcio.it, le riscarica. Errore 502 se non riesce ad aggiornarle."""
+    last_day = fanta_client.get_last_matchday()
+    if last_day < 0:
+        raise HTTPException(502, "Impossibile verificare l'ultima giornata su fantacalcio.it")
+    stored = db.query(func.max(PlayerSnapshot.match_day)).filter(PlayerSnapshot.season_id == season_id).scalar()
+    if stored is not None and stored >= last_day:
+        return
+    if not sync_prices(db, season_id).get("ok"):
+        raise HTTPException(502, "Impossibile aggiornare le quotazioni da fantacalcio.it")
+
+
+def _return_signal(db: Session, inj: InjuryPlayer) -> bool:
+    """Segnale visivo (mai automatico): l'infortunato sembra rientrato, ma
+    e' l'admin a confermare con 'Segna rientro'."""
+    if not inj.is_active:
+        return False
+    if inj.return_detected_at:
+        return True
+    if db.query(SerieAInjuryReport.id).filter(SerieAInjuryReport.player_id == inj.player_id).first():
+        return False
+    return (
+        db.query(SerieAInjuryArchive.id)
+        .filter(SerieAInjuryArchive.player_id == inj.player_id, SerieAInjuryArchive.ended_at >= inj.created_at)
+        .first()
+        is not None
     )
 
 
@@ -105,6 +138,7 @@ def list_injury_swaps(season_id: int, db: Session = Depends(get_db)):
             "role": inj.player.role if inj.player else None,
             "current_price": snap.price if snap else None,
             "is_active": inj.is_active,
+            "return_signal": _return_signal(db, inj),
             "created_at": inj.created_at,
             "teams": teams,
         })
@@ -113,6 +147,12 @@ def list_injury_swaps(season_id: int, db: Session = Depends(get_db)):
         "warning": _season_end_warning(db, season_id),
         "injuries": result,
     }
+
+
+@router.post("/refresh-prices")
+def refresh_prices(season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
+    _ensure_fresh_prices(db, season_id)
+    return {"ok": True}
 
 
 @router.get("/candidates")
@@ -164,6 +204,7 @@ def list_candidates(
             & (PlayerSnapshot.match_day == latest.c.md),
         )
         .filter(
+            Player.role == injury.player.role,
             Player.name.ilike(f"%{term}%"),
             PlayerSnapshot.price <= snap.price,
             Player.id.notin_(taken),
@@ -219,6 +260,10 @@ def create_swap(data: SwapCreate, db: Session = Depends(get_db), _admin: str = D
         raise HTTPException(404, "Sostituto non trovato")
     if repl.id == injury.player_id:
         raise HTTPException(400, "Il sostituto non puo' essere l'infortunato")
+    if repl.role != injury.player.role:
+        raise HTTPException(400, f"Il sostituto deve avere lo stesso ruolo dell'infortunato ({injury.player.role})")
+
+    _ensure_fresh_prices(db, season_id)
 
     injured_snap = _latest_snapshot(db, injury.player_id, season_id)
     repl_snap = _latest_snapshot(db, repl.id, season_id)

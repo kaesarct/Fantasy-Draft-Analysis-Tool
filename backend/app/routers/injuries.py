@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from datetime import date
+from datetime import date, datetime
+from sqlalchemy import func
 from app.database import get_db
 from app.models.injury import InjuryPlayer, InjuryArchive
-from app.models.player import PlayerMatchScore
+from app.models.player import PlayerMatchScore, PlayerSnapshot
 from app.models.fanta_team import FantaRosterTempSub
+from app.routers.injury_swaps import _return_signal
 from app.services.auth_service import require_admin
 from app.services.fanta_client import fanta_client
 from app.services.sync_service import sync_votes
@@ -68,6 +70,7 @@ def list_injuries(season_id: int | None = None, active_only: bool = True, db: Se
             "expected_return": i.expected_return, "confirmed_return": i.confirmed_return,
             "qualifies_for_temp_sub": i.qualifies_for_temp_sub, "is_active": i.is_active,
             "notes": i.notes, "created_at": i.created_at,
+            "return_signal": _return_signal(db, i),
         }
         for i in injuries
     ]
@@ -111,6 +114,12 @@ def mark_recovered(
         raise HTTPException(404)
     injury.confirmed_return = confirmed_return
     injury.is_active = False
+    last_day = db.query(func.max(PlayerSnapshot.match_day)).filter(PlayerSnapshot.season_id == injury.season_id).scalar()
+    for sub in db.query(FantaRosterTempSub).filter(
+        FantaRosterTempSub.injury_id == injury_id, FantaRosterTempSub.is_active == True
+    ):
+        sub.is_active = False
+        sub.end_match_day = last_day
     db.commit()
     return {"ok": True}
 
@@ -148,8 +157,7 @@ def check_recovery(
             "player_name": inj.player.name if inj.player else None,
         }
         if score:
-            inj.is_active = False
-            inj.confirmed_return = date.today()
+            inj.return_detected_at = inj.return_detected_at or datetime.utcnow()
             returned.append(entry)
         else:
             still_injured.append(entry)

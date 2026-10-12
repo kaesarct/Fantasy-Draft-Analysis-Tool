@@ -19,6 +19,9 @@ class InjuryPlayer(Base):
     is_active = Column(Boolean, default=True)           # False dopo il rientro
     qualifies_for_temp_sub = Column(Boolean, default=False)  # ≥ 8 settimane
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Rientro rilevato dal controllo voti: solo un segnale, e' l'admin a
+    # confermare il rientro con "Segna rientro".
+    return_detected_at = Column(DateTime, nullable=True)
 
     player = relationship("Player", back_populates="injuries")
 
