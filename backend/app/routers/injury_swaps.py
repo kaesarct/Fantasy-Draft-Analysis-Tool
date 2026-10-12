@@ -149,6 +149,37 @@ def list_injury_swaps(season_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/summary")
+def swaps_summary(season_id: int, db: Session = Depends(get_db)):
+    """Riepilogo pubblico per squadra: solo squadre con almeno un cambio."""
+    subs = (
+        db.query(FantaRosterTempSub)
+        .join(FantaRoster, FantaRoster.id == FantaRosterTempSub.roster_entry_id)
+        .filter(FantaRoster.season_id == season_id)
+        .order_by(FantaRosterTempSub.created_at)
+        .all()
+    )
+    by_team: dict[int, dict] = {}
+    for s in subs:
+        team = s.roster_entry.fanta_team
+        entry = by_team.setdefault(team.id, {
+            "team_id": team.id,
+            "team_name": team.name,
+            "league_level": team.league.level.value if team.league else None,
+            "swaps": [],
+        })
+        entry["swaps"].append({
+            "injured_player_name": s.roster_entry.player.name,
+            "replacement_player_name": s.replacement_player.name if s.replacement_player else None,
+            "created_at": s.created_at,
+        })
+    teams = sorted(by_team.values(), key=lambda t: (-len(t["swaps"]), t["team_name"]))
+    for t in teams:
+        t["swaps_used"] = len(t["swaps"])
+        t["exhausted"] = t["swaps_used"] >= MAX_SWAPS_PER_TEAM
+    return {"max_swaps_per_team": MAX_SWAPS_PER_TEAM, "teams": teams}
+
+
 @router.post("/refresh-prices")
 def refresh_prices(season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)):
     _ensure_fresh_prices(db, season_id)

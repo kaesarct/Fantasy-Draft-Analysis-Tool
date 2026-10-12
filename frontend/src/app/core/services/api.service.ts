@@ -202,6 +202,10 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/injury-swaps/candidates`, { params });
   }
 
+  getInjurySwapsSummary(seasonId: number): Observable<any> {
+    return this.http.get(`${this.base}/injury-swaps/summary`, { params: new HttpParams().set('season_id', seasonId) });
+  }
+
   refreshInjurySwapPrices(seasonId: number): Observable<any> {
     return this.http.post(`${this.base}/injury-swaps/refresh-prices`, null, { params: new HttpParams().set('season_id', seasonId) });
   }

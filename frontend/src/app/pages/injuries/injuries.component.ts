@@ -110,6 +110,27 @@ import { AuthService } from '../../core/services/auth.service';
         </div>
       }
 
+      @if (swapSummary().length) {
+        <div class="section-title">🔁 Cambi per infortunio per squadra</div>
+        <div class="swap-summary mb-4">
+          @for (t of swapSummary(); track t.team_id) {
+            <div class="swap-team">
+              <div class="swap-team-name">
+                {{ t.team_name }}
+                <span class="text-muted">· {{ t.league_level }} · {{ t.swaps_used }}/{{ swapMax() }}</span>
+                @if (t.exhausted) {
+                  <span class="red-dot" title="Finito cambi"></span>
+                  <span class="exhausted-label">Finito cambi</span>
+                }
+              </div>
+              @for (s of t.swaps; track $index) {
+                <div class="swap-line">{{ s.injured_player_name }} ➜ {{ s.replacement_player_name }}</div>
+              }
+            </div>
+          }
+        </div>
+      }
+
       <div class="section-title" id="seriea-top">🩺 Infortunati Serie A (ufficiale fantacalcio.it)</div>
       @if (auth.isAuthenticated()) {
         <div class="actions-bar mb-3">
@@ -297,6 +318,13 @@ import { AuthService } from '../../core/services/auth.service';
 
     .mb-3 { margin-bottom: 16px; }
 
+    .swap-summary { display: flex; flex-direction: column; gap: 10px; }
+    .swap-team { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px 16px; }
+    .swap-team-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .swap-line { font-size: 13px; padding: 2px 0; }
+    .red-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-red); display: inline-block; }
+    .exhausted-label { font-size: 12px; font-weight: 600; color: var(--accent-red); }
+
     .seriea-team-nav { display: flex; flex-wrap: wrap; gap: 8px; }
     .seriea-team-nav-btn {
       width: 40px; height: 40px; padding: 4px; border-radius: var(--radius-sm);
@@ -358,6 +386,9 @@ export class InjuriesComponent implements OnInit, OnDestroy {
       .sort((a, b) => (b.confirmed_return ?? '').localeCompare(a.confirmed_return ?? ''))
   );
 
+  swapSummary = signal<any[]>([]);
+  swapMax = signal(3);
+
   serieAInjuries = signal<any[]>([]);
   serieAArchive = signal<any[]>([]);
   loadingSerieA = signal(true);
@@ -391,6 +422,11 @@ export class InjuriesComponent implements OnInit, OnDestroy {
         const current = seasons.find((s: any) => s.is_current) ?? seasons[0];
         this.currentSeasonId.set(current?.id ?? null);
         this.loadInjuries();
+        if (current?.id) {
+          this.api.getInjurySwapsSummary(current.id).subscribe({
+            next: res => { this.swapSummary.set(res.teams); this.swapMax.set(res.max_swaps_per_team); },
+          });
+        }
       },
       error: () => this.loadInjuries(),
     });
