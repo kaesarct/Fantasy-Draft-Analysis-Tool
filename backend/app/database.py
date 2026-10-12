@@ -62,6 +62,18 @@ def init_db():
     _migrate_merge_duplicate_teams()
     _migrate_seed_season_awards()
     _migrate_add_serie_a_injury_logo()
+    _migrate_add_temp_sub_injury_fields()
+
+
+def _migrate_add_temp_sub_injury_fields():
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE fanta_roster_temp_subs ADD COLUMN IF NOT EXISTS injury_id INTEGER REFERENCES injury_players(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE fanta_roster_temp_subs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"
+        ))
 
 
 def _migrate_add_lineage_id():

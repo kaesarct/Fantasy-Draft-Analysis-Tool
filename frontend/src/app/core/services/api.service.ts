@@ -192,6 +192,24 @@ export class ApiService {
     return this.http.post(`${this.base}/injuries/check-recovery`, null, { params });
   }
 
+  // ── Cambi per infortunio ───────────────────────────────────
+  getInjurySwaps(seasonId: number): Observable<any> {
+    return this.http.get(`${this.base}/injury-swaps`, { params: new HttpParams().set('season_id', seasonId) });
+  }
+
+  getInjurySwapCandidates(injuryId: number, teamId: number, search: string): Observable<any[]> {
+    const params = new HttpParams().set('injury_id', injuryId).set('team_id', teamId).set('search', search);
+    return this.http.get<any[]>(`${this.base}/injury-swaps/candidates`, { params });
+  }
+
+  createInjurySwap(data: { injury_id: number; team_id: number; replacement_player_id: number }): Observable<any> {
+    return this.http.post(`${this.base}/injury-swaps`, data);
+  }
+
+  deleteInjurySwap(id: number): Observable<any> {
+    return this.http.delete(`${this.base}/injury-swaps/${id}`);
+  }
+
   // ── Infortunati Serie A (fantacalcio.it) ────────────────────
   syncSerieAInjuries(): Observable<any> {
     return this.http.post(`${this.base}/serie-a-injuries/sync`, null);

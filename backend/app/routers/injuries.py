@@ -9,6 +9,7 @@ from datetime import date
 from app.database import get_db
 from app.models.injury import InjuryPlayer, InjuryArchive
 from app.models.player import PlayerMatchScore
+from app.models.fanta_team import FantaRosterTempSub
 from app.services.auth_service import require_admin
 from app.services.fanta_client import fanta_client
 from app.services.sync_service import sync_votes
@@ -162,6 +163,8 @@ def delete_injury(injury_id: int, db: Session = Depends(get_db), _admin: str = D
     injury = db.query(InjuryPlayer).filter(InjuryPlayer.id == injury_id).first()
     if not injury:
         raise HTTPException(404)
+    if db.query(FantaRosterTempSub.id).filter(FantaRosterTempSub.injury_id == injury_id).first():
+        raise HTTPException(409, "Esistono cambi registrati per questo infortunio: eliminali prima da Infortuni scambiati")
     db.delete(injury)
     db.commit()
     return {"ok": True}

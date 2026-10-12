@@ -9,7 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
 from app.database import init_db
-from app.routers import players, teams, league, injuries, matches, sync, history, serie_a_injuries, auth, player_merge, team_merge, trades, winter_market, player_stats_archive, awards, leghe_sync, db_backup
+from app.routers import players, teams, league, injuries, injury_swaps,matches, sync, history, serie_a_injuries, auth, player_merge, team_merge, trades, winter_market, player_stats_archive, awards, leghe_sync, db_backup
 
 logging.basicConfig(level=settings.log_level.upper())
 logger = logging.getLogger(__name__)
@@ -113,6 +113,7 @@ app.include_router(players.router, prefix=API_PREFIX)
 app.include_router(teams.router, prefix=API_PREFIX)
 app.include_router(league.router, prefix=API_PREFIX)
 app.include_router(injuries.router, prefix=API_PREFIX)
+app.include_router(injury_swaps.router, prefix=API_PREFIX)
 app.include_router(matches.router, prefix=API_PREFIX)
 app.include_router(sync.router, prefix=API_PREFIX)
 app.include_router(history.router, prefix=API_PREFIX)

@@ -53,6 +53,11 @@ export const routes: Routes = [
       import('./pages/injuries/injuries.component').then(m => m.InjuriesComponent),
   },
   {
+    path: 'injury-swaps',
+    loadComponent: () =>
+      import('./pages/injury-swaps/injury-swaps.component').then(m => m.InjurySwapsComponent),
+  },
+  {
     path: 'history',
     loadComponent: () =>
       import('./pages/history/history.component').then(m => m.HistoryComponent),

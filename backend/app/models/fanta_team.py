@@ -145,6 +145,10 @@ class FantaRosterTempSub(Base):
     start_match_day = Column(Integer, nullable=False)
     end_match_day = Column(Integer, nullable=True)  # Null finché il titolare non rientra
     is_active = Column(Boolean, default=True)
+    # Il cambio conta per il tetto stagionale anche dopo il rientro
+    # dell'infortunato: si libera solo se l'admin lo elimina (correzione).
+    injury_id = Column(Integer, ForeignKey("injury_players.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     roster_entry = relationship("FantaRoster", back_populates="temp_subs")
     replacement_player = relationship("Player", foreign_keys=[replacement_player_id])
