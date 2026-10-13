@@ -219,20 +219,36 @@ def _live_standings(db: Session, comp: Competition) -> list[dict]:
         for t in _standings_roster(db, comp)
     }
     if comp.type.value == "SILVER":
-        # Silver non ha iscrizioni automatiche ne' (di norma) manuali: le squadre
-        # sono quelle che hanno punteggi sincronizzati.
-        scores = db.query(CompetitionMatchdayScore).filter(CompetitionMatchdayScore.competition_id == comp.id).all()
-        for team in db.query(FantaTeam).filter(FantaTeam.id.in_({sc.fanta_team_id for sc in scores} - rows.keys())):
-            rows[team.id] = {
-                "fanta_team_id": team.id, "fanta_team_name": team.name, "competition_id": comp.id,
-                "match_day": 0, "pts": 0, "wins": 0, "draws": 0, "losses": 0,
-                "goals_for": 0.0, "goals_against": 0.0, "total_score": 0.0,
-            }
-        for sc in scores:
-            row = rows.get(sc.fanta_team_id)
-            if row:
-                row["total_score"] += sc.score
-                row["match_day"] = max(row["match_day"], sc.match_day)
+        # Silver e' la somma dei punteggi di giornata: li prendo dai punteggi
+        # sincronizzati e, per le giornate che mancano, dai risultati dei
+        # campionati Gold/Bronze/Carbon della stessa stagione (stesso punteggio
+        # per squadra e giornata). Iscrizioni a Silver non ce ne sono.
+        by_day: dict[tuple[int, int], float] = {
+            (sc.fanta_team_id, sc.match_day): sc.score
+            for sc in db.query(CompetitionMatchdayScore).filter(CompetitionMatchdayScore.competition_id == comp.id)
+        }
+        main_comp_ids = [
+            c.id for c in db.query(Competition).filter(
+                Competition.season_id == comp.season_id, Competition.type.in_(list(MAIN_LEAGUE_TYPES))
+            )
+        ]
+        if main_comp_ids:
+            for m in db.query(MatchResult).filter(MatchResult.competition_id.in_(main_comp_ids)):
+                for team_id, score in ((m.fanta_team_home_id, m.score_home), (m.fanta_team_away_id, m.score_away)):
+                    if score is not None:
+                        by_day.setdefault((team_id, m.match_day), score)
+        team_ids = {team_id for team_id, _ in by_day} - rows.keys()
+        if team_ids:
+            for team in db.query(FantaTeam).filter(FantaTeam.id.in_(team_ids)):
+                rows[team.id] = {
+                    "fanta_team_id": team.id, "fanta_team_name": team.name, "competition_id": comp.id,
+                    "match_day": 0, "pts": 0, "wins": 0, "draws": 0, "losses": 0,
+                    "goals_for": 0.0, "goals_against": 0.0, "total_score": 0.0,
+                }
+        for (team_id, day), score in by_day.items():
+            row = rows[team_id]
+            row["total_score"] += score
+            row["match_day"] = max(row["match_day"], day)
         return sorted(rows.values(), key=lambda r: r["total_score"], reverse=True)
 
     for m in db.query(MatchResult).filter(MatchResult.competition_id == comp.id):
