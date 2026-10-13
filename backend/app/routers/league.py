@@ -219,7 +219,16 @@ def _live_standings(db: Session, comp: Competition) -> list[dict]:
         for t in _standings_roster(db, comp)
     }
     if comp.type.value == "SILVER":
-        for sc in db.query(CompetitionMatchdayScore).filter(CompetitionMatchdayScore.competition_id == comp.id):
+        # Silver non ha iscrizioni automatiche ne' (di norma) manuali: le squadre
+        # sono quelle che hanno punteggi sincronizzati.
+        scores = db.query(CompetitionMatchdayScore).filter(CompetitionMatchdayScore.competition_id == comp.id).all()
+        for team in db.query(FantaTeam).filter(FantaTeam.id.in_({sc.fanta_team_id for sc in scores} - rows.keys())):
+            rows[team.id] = {
+                "fanta_team_id": team.id, "fanta_team_name": team.name, "competition_id": comp.id,
+                "match_day": 0, "pts": 0, "wins": 0, "draws": 0, "losses": 0,
+                "goals_for": 0.0, "goals_against": 0.0, "total_score": 0.0,
+            }
+        for sc in scores:
             row = rows.get(sc.fanta_team_id)
             if row:
                 row["total_score"] += sc.score
