@@ -264,6 +264,7 @@ export class AppComponent implements OnInit {
     { label: 'Infortuni scambiati', route: '/injury-swaps', icon: '🔁' },
     { label: 'Storico',     route: '/history',    icon: '📊' },
     { label: 'Goku & Oscar', route: '/awards',    icon: '🏆' },
+    { label: 'Regolamento', route: '/regolamento', icon: '📜' },
     { label: 'Admin',       route: '/admin',      icon: '⚙️'  },
     { label: 'Gestione Squadre', route: '/admin/squadre', icon: '🛡️' },
     { label: 'Mercato',     route: '/admin/mercato', icon: '🔄' },

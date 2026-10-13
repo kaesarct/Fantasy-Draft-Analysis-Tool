@@ -68,6 +68,11 @@ export const routes: Routes = [
       import('./pages/awards/awards.component').then(m => m.AwardsComponent),
   },
   {
+    path: 'regolamento',
+    loadComponent: () =>
+      import('./pages/regolamento/regolamento.component').then(m => m.RegolamentoComponent),
+  },
+  {
     path: 'admin',
     canActivate: [authGuard],
     loadComponent: () =>
