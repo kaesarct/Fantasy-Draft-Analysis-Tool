@@ -51,11 +51,11 @@ function slugUsername(name: string): string {
             styleClass="filter-drop"
           />
           <button pButton label="Carica da leghe.fantacalcio.it" icon="pi pi-download" [loading]="loading()" [disabled]="!selectedSeasonId" (click)="load()"></button>
-          <button pButton label="🎯 Sync punteggi (Goku/Oscar)" class="p-button-outlined" [loading]="syncingScores()" [disabled]="!selectedSeasonId" (click)="syncMatchdayScores()"></button>
+          <button pButton label="🎯 Sync punteggi + classifiche (Goku/Oscar)" class="p-button-outlined" [loading]="syncingScores()" [disabled]="!selectedSeasonId" (click)="syncMatchdayScores()"></button>
           <button pButton label="Sync risultati/calendario" icon="pi pi-chart-bar" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="syncResults()"></button>
         </div>
         <p class="text-muted" style="font-size:12px; margin-top:6px;">
-          <strong>Sync punteggi</strong>: fonte usata da Premio Goku/Oscar, copre tutte le competizioni
+          <strong>Sync punteggi</strong> (il pulsante lancia di seguito anche la sync risultati, cosi' popola con un click anche le Classifiche): fonte usata da Premio Goku/Oscar, copre tutte le competizioni
           collegate incluso Silver, ma non dice chi ha giocato contro chi. <strong>Sync risultati/calendario</strong>:
           dà anche l'accoppiamento partita e i gol da fasce (non funziona per Silver). Entrambe da fare
           dopo aver collegato le squadre qui sotto.
@@ -410,6 +410,7 @@ export class AdminLegheSyncComponent implements OnInit {
       next: res => {
         this.syncingScores.set(false);
         this.scoresReport.set(res);
+        this.syncResults();
       },
       error: err => {
         this.syncingScores.set(false);
