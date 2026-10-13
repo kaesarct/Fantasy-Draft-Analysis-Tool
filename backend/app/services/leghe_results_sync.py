@@ -6,6 +6,7 @@ etl/import_history.py per lo storico (regex duplicate qui, non importate — 4
 righe stabili, evita di far dipendere app/ da uno script one-off in etl/)."""
 import io
 import re
+import unicodedata
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -19,6 +20,13 @@ from app.services.leghe_competition_sync import ensure_competitions
 GIORNATA_RE = re.compile(r"(\d+)ª\s+Giornata\s+lega", re.IGNORECASE)
 GOALS_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
 GIRONE_LETTER_RE = re.compile(r"^[A-Z]$")
+
+
+def _name_key(name: str) -> str:
+    """Chiave di confronto tollerante a accenti, maiuscole, spazi e punteggiatura:
+    il nome nell'Excel puo' differire da quello dell'API teams per rumore tipografico."""
+    stripped = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
+    return "".join(c for c in stripped.casefold() if c.isalnum())
 
 
 def _is_blank(value) -> bool:
@@ -136,11 +144,13 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
                     FantaTeam.season_id == season.id, FantaTeam.leghe_team_id.isnot(None)
                 )
             }
-            name_to_team = {
-                name: our_teams[leghe_team_id]
-                for leghe_team_id, name in teams_by_leghe_id.items()
-                if leghe_team_id in our_teams
-            }
+            name_to_team: dict[str, FantaTeam] = {}
+            for leghe_team_id, name in teams_by_leghe_id.items():
+                team = our_teams.get(leghe_team_id)
+                if team:
+                    name_to_team[_name_key(name)] = team
+            for team in our_teams.values():
+                name_to_team.setdefault(_name_key(team.name), team)
 
             is_cup = comp_type not in {"GOLD", "BRONZE", "CARBON", "SILVER"}
             excel_bytes = client.download_results_excel(comp.leghe_id, comp_type)
@@ -149,8 +159,8 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
             imported = updated = 0
             unmatched: set[str] = set()
             for m in matches:
-                home_team = name_to_team.get(m["home_name"])
-                away_team = name_to_team.get(m["away_name"])
+                home_team = name_to_team.get(_name_key(m["home_name"]))
+                away_team = name_to_team.get(_name_key(m["away_name"]))
                 if not home_team:
                     unmatched.add(m["home_name"])
                 if not away_team:
