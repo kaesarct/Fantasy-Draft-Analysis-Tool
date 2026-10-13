@@ -91,6 +91,9 @@ function slugUsername(name: string): string {
                 @if (kv.data.teams_unmatched) {
                   <span class="text-negative">— {{ kv.data.teams_unmatched }} squadre non collegate</span>
                 }
+                @if (kv.data.reason) {
+                  <span class="text-muted">({{ kv.data.reason }})</span>
+                }
               }
             </div>
           }

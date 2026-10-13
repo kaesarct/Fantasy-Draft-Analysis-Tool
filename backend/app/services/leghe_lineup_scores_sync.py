@@ -17,6 +17,15 @@ from app.services.leghe_client import LegheClient
 from app.services.leghe_competition_sync import ensure_competitions
 
 
+def _zero_reason(last_matchday, s_day, e_day, n_teams, n_unmatched, skipped_cached, empty) -> str:
+    if n_teams == n_unmatched:
+        return "nessuna squadra della competizione e' collegata (leghe_team_id mancante)"
+    if skipped_cached and not empty:
+        return "giornate gia' sincronizzate in precedenza, nulla di nuovo"
+    return (f"{empty} lineup non disponibili (giornata non attiva o senza punteggio); "
+            f"ultima giornata Serie A={last_matchday}, competizione giornate {s_day}-{e_day}")
+
+
 def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | None = None) -> dict:
     client = LegheClient()
     client.login()
@@ -49,7 +58,11 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
         s_day, e_day = leghe_comp["sDay"], leghe_comp["eDay"]
         upper = min(e_day, last_matchday)
         if upper < s_day:
-            report[comp_type] = {"scores_synced": 0, "teams_unmatched": 0}
+            report[comp_type] = {
+                "scores_synced": 0, "teams_unmatched": 0,
+                "reason": f"nessuna giornata da scaricare: ultima giornata Serie A={last_matchday}, "
+                          f"competizione giornate {s_day}-{e_day}",
+            }
             continue
 
         our_teams = {
@@ -68,7 +81,7 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
             )
         }
 
-        synced = 0
+        synced = skipped_cached = empty = 0
         for match_day in range(s_day, upper + 1):
             # Rilanci ripetuti non ri-scaricano giornate gia' sincronizzate,
             # tranne l'ultima (puo' avere correzioni tardive dei voti).
@@ -78,10 +91,12 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
                 if not team:
                     continue
                 if not refresh and (team.id, match_day) in already_synced:
+                    skipped_cached += 1
                     continue
 
                 data = client.get_team_lineup(comp.leghe_id, match_day, leghe_team_id)
                 if not data or data.get("tot") is None:
+                    empty += 1
                     continue
 
                 existing = db.query(CompetitionMatchdayScore).filter(
@@ -102,6 +117,9 @@ def sync_matchday_scores(db: Session, season: Season, comp_types: list[str] | No
         report[comp_type] = {
             "scores_synced": synced, "teams_unmatched": len(unmatched),
             "appena_creata": comp_type in newly_created,
+            "reason": None if synced else _zero_reason(
+                last_matchday, s_day, e_day, len(leghe_team_ids), len(unmatched), skipped_cached, empty
+            ),
         }
 
     return report
