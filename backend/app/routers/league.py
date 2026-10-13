@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
-from app.models.competition import Competition, CompetitionStanding, CompetitionType, MatchResult, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase
+from app.models.competition import Competition, CompetitionMatchdayScore, CompetitionStanding, CompetitionType, MatchResult, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase
 from app.models.fanta_team import FantaTeam, League, FantaTeamLineage, FantaTeamCoach
 from app.models.injury import InjuryPlayer, InjuryArchive
 from app.services.auth_service import require_admin
@@ -206,6 +206,48 @@ def create_competition(data: CompetitionCreate, db: Session = Depends(get_db), _
     return {"id": comp.id, "name": comp.name, "type": comp.type, "is_active": comp.is_active}
 
 
+def _live_standings(db: Session, comp: Competition) -> list[dict]:
+    """Classifica della stagione in corso, calcolata al volo dai risultati
+    sincronizzati: nessuna sync scrive CompetitionStanding (solo storico ed
+    editor manuale), quindi senza questo fallback la pagina resterebbe vuota."""
+    rows = {
+        t.id: {
+            "fanta_team_id": t.id, "fanta_team_name": t.name, "competition_id": comp.id,
+            "match_day": 0, "pts": 0, "wins": 0, "draws": 0, "losses": 0,
+            "goals_for": 0.0, "goals_against": 0.0, "total_score": 0.0,
+        }
+        for t in _standings_roster(db, comp)
+    }
+    if comp.type.value == "SILVER":
+        for sc in db.query(CompetitionMatchdayScore).filter(CompetitionMatchdayScore.competition_id == comp.id):
+            row = rows.get(sc.fanta_team_id)
+            if row:
+                row["total_score"] += sc.score
+                row["match_day"] = max(row["match_day"], sc.match_day)
+        return sorted(rows.values(), key=lambda r: r["total_score"], reverse=True)
+
+    for m in db.query(MatchResult).filter(MatchResult.competition_id == comp.id):
+        for team_id, own, opp, score_for, score_against in (
+            (m.fanta_team_home_id, m.goals_home, m.goals_away, m.score_home, m.score_away),
+            (m.fanta_team_away_id, m.goals_away, m.goals_home, m.score_away, m.score_home),
+        ):
+            row = rows.get(team_id)
+            if not row:
+                continue
+            row["match_day"] = max(row["match_day"], m.match_day)
+            row["goals_for"] += score_for or 0.0
+            row["goals_against"] += score_against or 0.0
+            if own > opp:
+                row["wins"] += 1
+                row["pts"] += 3
+            elif own == opp:
+                row["draws"] += 1
+                row["pts"] += 1
+            else:
+                row["losses"] += 1
+    return sorted(rows.values(), key=lambda r: (r["pts"], r["goals_for"]), reverse=True)
+
+
 @seasons_router.get("/{season_id}/standings")
 def get_season_standings(
     season_id: int,
@@ -225,6 +267,12 @@ def get_season_standings(
     # Silver e' la classifica ad accumulo (total_score), non a punti (pts).
     order_field = CompetitionStanding.total_score if comp_type and comp_type.upper() == "SILVER" else CompetitionStanding.pts
     standings = q.order_by(order_field.desc()).all()
+    if not standings and comp_type and not match_day:
+        comp = db.query(Competition).filter(
+            Competition.season_id == season_id, Competition.type == comp_type.upper()
+        ).first()
+        if comp:
+            return _live_standings(db, comp)
     return [
         {
             "fanta_team_id": s.fanta_team_id,
