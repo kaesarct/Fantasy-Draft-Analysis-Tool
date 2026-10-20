@@ -3,6 +3,10 @@
 Sincronizzazione manuale, da fare una volta a inizio stagione (vedi
 frontend/.../admin-leghe-sync): non tocca risultati/voti, solo l'identita'
 squadra/allenatore — prerequisito per future sync automatiche."""
+import functools
+import logging
+
+import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -18,6 +22,31 @@ from app.services.leghe_lineup_scores_sync import sync_matchday_scores
 from app.services.competition_provisioning import MAIN_LEAGUE_TYPES, _ensure_league_and_competition
 
 router = APIRouter(prefix="/leghe-sync", tags=["leghe-sync"])
+logger = logging.getLogger(__name__)
+
+
+def _leghe_errors(func):
+    """Trasforma i fallimenti verso leghe.fantacalcio.it (login, rete, risposte
+    HTTP di errore) in un 502 con la causa leggibile, invece di un 500 muto."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except HTTPException:
+            raise
+        except requests.HTTPError as e:
+            logger.exception("Errore HTTP da leghe.fantacalcio.it")
+            resp = e.response
+            where = resp.url.split("?")[0] if resp is not None else "?"
+            status = resp.status_code if resp is not None else "?"
+            raise HTTPException(502, f"leghe.fantacalcio.it ha risposto {status} su {where}")
+        except requests.RequestException as e:
+            logger.exception("Errore di rete verso leghe.fantacalcio.it")
+            raise HTTPException(502, f"leghe.fantacalcio.it non raggiungibile: {type(e).__name__}")
+        except (RuntimeError, ValueError) as e:
+            logger.exception("Errore leghe.fantacalcio.it")
+            raise HTTPException(502, str(e))
+    return wrapper
 
 
 def _normalize(name: str) -> str:
@@ -25,6 +54,7 @@ def _normalize(name: str) -> str:
 
 
 @router.get("/participants")
+@_leghe_errors
 def get_leghe_participants(
     season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
 ):
@@ -285,6 +315,7 @@ def apply_leghe_sync(
 
 
 @router.post("/sync-results")
+@_leghe_errors
 def sync_leghe_results(
     season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
 ):
@@ -295,6 +326,7 @@ def sync_leghe_results(
 
 
 @router.post("/sync-matchday-scores")
+@_leghe_errors
 def sync_leghe_matchday_scores(
     season_id: int, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
 ):
