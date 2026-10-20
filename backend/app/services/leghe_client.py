@@ -15,6 +15,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# apileague.fantacalcio.it (CloudFront) risponde 403 "Request failed" allo
+# user-agent di default di python-requests, a prescindere dalle credenziali:
+# con uno da browser risponde normalmente (verificato dal vivo il 2026-10-20).
+BROWSER_HEADERS = {
+    "user-agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "origin": "https://leghe.fantacalcio.it",
+    "referer": "https://leghe.fantacalcio.it/",
+}
+
+
 class LegheClient:
     LOGIN_URL = "https://apileague.fantacalcio.it/onboarding/v1/login"
     APILEAGUE_BASE = "https://apileague.fantacalcio.it"
@@ -28,6 +41,7 @@ class LegheClient:
                 "app_key": app_key or self._discover_app_key(),
                 "accept": "application/json",
                 "content-type": "application/json",
+                **BROWSER_HEADERS,
             }
         )
         self.utente = None
@@ -85,6 +99,7 @@ class LegheClient:
             "app_key": self.session.headers["app_key"],
             "authorization": f"Bearer {self._lega_jwt}",
             "accept": "application/json",
+            **BROWSER_HEADERS,
         }
 
     def list_competitions(self) -> list[dict]:

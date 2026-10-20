@@ -105,6 +105,8 @@ Puoi forzare la sincronizzazione in qualsiasi momento chiamando le API di sync (
 
 ## 🔑 Sessione leghe.fantacalcio.it
 
+> **403 "Request failed" sul login (apileague.fantacalcio.it)**: il sito (CloudFront) blocca lo user-agent di default di `python-requests`. `LegheClient` invia perciò header da browser (`BROWSER_HEADERS` in `leghe_client.py`); se il 403 ricompare, controlla prima che quegli header siano ancora accettati.
+
 Il download delle formazioni usa un browser autenticato (Playwright): l'endpoint
 `V1_LegheFormazioni/Pagina` rifiuta le chiamate HTTP dirette. La sessione viene
 salvata in `backend/session/tamarros_session.json` (montata nel container come
