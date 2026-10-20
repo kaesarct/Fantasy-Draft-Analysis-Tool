@@ -259,6 +259,7 @@ def _live_standings(db: Session, comp: Competition) -> list[dict]:
             row = rows.get(team_id)
             if not row:
                 continue
+            own, opp = own or 0, opp or 0
             row["match_day"] = max(row["match_day"], m.match_day)
             row["goals_for"] += score_for or 0.0
             row["goals_against"] += score_against or 0.0
