@@ -6,6 +6,7 @@ from app.models.season import Season
 from app.models.competition import Competition, CompetitionMatchdayScore, CompetitionPhase, CompetitionStanding, CompetitionType, MatchResult, SeasonAward
 from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
+from app.services.competition_provisioning import MAIN_LEAGUE_TYPES
 
 router = APIRouter(tags=["awards"])
 
@@ -128,7 +129,22 @@ def _matchday_scores(db: Session, season_id: int, comp_types: list[str]) -> list
             continue
         from_results = _matchday_scores_from_match_results(db, comp, comp_type)
         performances.extend(from_results if from_results else _matchday_scores_from_standings(db, comp, comp_type))
-    return performances
+    return _drop_cup_duplicates(performances)
+
+
+def _drop_cup_duplicates(performances: list[dict]) -> list[dict]:
+    """Una giornata di coppa si gioca con la stessa formazione di quella di
+    campionato, quindi stesso punteggio: se una prestazione di coppa coincide
+    (stessa squadra, stesso punteggio) con una di Gold/Bronze/Carbon, vale
+    quella della lega e la copia di coppa viene scartata, per non
+    duplicare il risultato in Goku/Oscar."""
+    league_keys = {
+        (p["fanta_team_id"], p["score"]) for p in performances if p["competition_type"] in MAIN_LEAGUE_TYPES
+    }
+    return [
+        p for p in performances
+        if p["competition_type"] in MAIN_LEAGUE_TYPES or (p["fanta_team_id"], p["score"]) not in league_keys
+    ]
 
 
 def _absolute_record(

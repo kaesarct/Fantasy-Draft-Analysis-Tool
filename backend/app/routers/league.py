@@ -456,6 +456,41 @@ def get_competition_matches(comp_id: int, match_day: int | None = None, db: Sess
     ]
 
 
+def _match_points(m: MatchResult) -> tuple[int, int]:
+    """Punti classifica di una partita: quelli salvati (storico) se presenti,
+    altrimenti 3/1/0 dai gol, perche' la sync da leghe non valorizza pts_*."""
+    if m.pts_home or m.pts_away:
+        return m.pts_home or 0, m.pts_away or 0
+    goals_home, goals_away = m.goals_home or 0, m.goals_away or 0
+    if goals_home > goals_away:
+        return 3, 0
+    if goals_home < goals_away:
+        return 0, 3
+    return 1, 1
+
+
+def _groups_from_matches(group_matches: list[MatchResult]) -> list[tuple[str, set[int]]]:
+    """Gironi ricavati dalle partite quando non sono configurati a mano: le
+    squadre che si incontrano tra loro formano lo stesso girone (componenti
+    connesse del grafo delle partite)."""
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for m in group_matches:
+        parent[find(m.fanta_team_home_id)] = find(m.fanta_team_away_id)
+    components: dict[int, set[int]] = {}
+    for team_id in list(parent):
+        components.setdefault(find(team_id), set()).add(team_id)
+    ordered = sorted(components.values(), key=lambda ids: min(ids))
+    return [(f"Girone {chr(ord('A') + i) if i < 26 else i + 1}", ids) for i, ids in enumerate(ordered)]
+
+
 @competitions_router.get("/{comp_id}/bracket")
 def get_competition_bracket(comp_id: int, db: Session = Depends(get_db)):
     """Vista per le coppe (Ciempions/UEFA/Coppa Italia): classifica calcolata
@@ -470,14 +505,19 @@ def get_competition_bracket(comp_id: int, db: Session = Depends(get_db)):
     teams_by_id = {t.id: t for t in db.query(FantaTeam).filter(FantaTeam.season_id == comp.season_id)}
     matches = db.query(MatchResult).filter(MatchResult.competition_id == comp_id).all()
 
-    groups_out = []
+    group_defs: list[tuple[str, set[int]]] = []
     for group in db.query(CompetitionGroup).filter(CompetitionGroup.competition_id == comp_id).order_by(CompetitionGroup.name):
-        team_ids = {
+        group_team_ids = {
             row[0] for row in
             db.query(CompetitionGroupTeam.fanta_team_id).filter(CompetitionGroupTeam.group_id == group.id)
         }
-        if not team_ids:
-            continue
+        if group_team_ids:
+            group_defs.append((group.name, group_team_ids))
+    if not group_defs:
+        group_defs = _groups_from_matches([m for m in matches if m.phase == CompetitionPhase.GROUP])
+
+    groups_out = []
+    for group_name, team_ids in group_defs:
         def team_name(tid: int) -> str:
             team = teams_by_id.get(tid)
             return team.name if team else f"Squadra #{tid}"
@@ -499,12 +539,13 @@ def get_competition_bracket(comp_id: int, db: Session = Depends(get_db)):
             home["goals_against"] += m.goals_away
             away["goals_for"] += m.goals_away
             away["goals_against"] += m.goals_home
-            home["pts"] += m.pts_home
-            away["pts"] += m.pts_away
-            if m.pts_home > m.pts_away:
+            pts_home, pts_away = _match_points(m)
+            home["pts"] += pts_home
+            away["pts"] += pts_away
+            if pts_home > pts_away:
                 home["wins"] += 1
                 away["losses"] += 1
-            elif m.pts_home < m.pts_away:
+            elif pts_home < pts_away:
                 away["wins"] += 1
                 home["losses"] += 1
             else:
@@ -515,7 +556,7 @@ def get_competition_bracket(comp_id: int, db: Session = Depends(get_db)):
             key=lambda s: (s["pts"], s["goals_for"] - s["goals_against"], s["goals_for"]),
             reverse=True,
         )
-        groups_out.append({"name": group.name, "standings": standings})
+        groups_out.append({"name": group_name, "standings": standings})
 
     knockout_matches = [m for m in matches if m.phase != CompetitionPhase.GROUP]
     phase_order = [CompetitionPhase.ROUND_OF_16, CompetitionPhase.QUARTER_FINAL,
