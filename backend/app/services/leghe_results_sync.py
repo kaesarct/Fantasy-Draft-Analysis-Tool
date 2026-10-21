@@ -11,7 +11,9 @@ import unicodedata
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models.competition import Competition, CompetitionPhase, MatchResult
+from app.models.competition import (
+    Competition, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase, MatchResult,
+)
 from app.models.fanta_team import FantaTeam
 from app.models.season import Season
 from app.services.leghe_client import LegheClient
@@ -108,6 +110,61 @@ def parse_calendar_excel(excel_bytes: bytes, is_cup: bool) -> list[dict]:
     return matches
 
 
+def parse_group_teams(excel_bytes: bytes) -> dict[str, set[str]]:
+    """Composizione dei gironi letta dall'Excel 'Calendario': la lettera in
+    prima colonna di ogni riga partita indica il girone. Considera anche le
+    partite non ancora giocate, che _parse_block scarta: sono quelle a
+    rivelare l'intero girone fin dalla prima giornata."""
+    df = pd.read_excel(io.BytesIO(excel_bytes), header=None)
+    groups: dict[str, set[str]] = {}
+    for idx in range(len(df)):
+        for col in range(df.shape[1]):
+            cell = df.iat[idx, col]
+            if not (isinstance(cell, str) and GIORNATA_RE.search(cell)):
+                continue
+            for row in range(idx + 1, len(df)):
+                letter = df.iat[row, col]
+                if not (isinstance(letter, str) and GIRONE_LETTER_RE.match(letter.strip())):
+                    break
+                if col + 4 >= df.shape[1]:
+                    break
+                home, away = df.iat[row, col + 1], df.iat[row, col + 4]
+                if _is_blank(home) or _is_blank(away):
+                    break
+                groups.setdefault(letter.strip(), set()).update({str(home).strip(), str(away).strip()})
+    return groups
+
+
+def _sync_groups(db: Session, comp: Competition, groups: dict[str, set[str]], name_to_team: dict) -> None:
+    """Crea i gironi della coppa e vi assegna le squadre; una squadra gia'
+    iscritta ad altro girone della stessa competizione (es. "Girone Unico"
+    creato a mano) viene spostata."""
+    existing = {
+        g.name: g for g in db.query(CompetitionGroup).filter(CompetitionGroup.competition_id == comp.id)
+    }
+    for letter, names in sorted(groups.items()):
+        group = existing.get(f"Girone {letter}")
+        if not group:
+            group = CompetitionGroup(competition_id=comp.id, name=f"Girone {letter}")
+            db.add(group)
+            db.flush()
+            existing[group.name] = group
+        for name in names:
+            team = name_to_team.get(_name_key(name))
+            if not team:
+                continue
+            db.query(CompetitionGroupTeam).filter(
+                CompetitionGroupTeam.fanta_team_id == team.id,
+                CompetitionGroupTeam.group_id.in_([g.id for g in existing.values()]),
+                CompetitionGroupTeam.group_id != group.id,
+            ).delete(synchronize_session=False)
+            already = db.query(CompetitionGroupTeam).filter(
+                CompetitionGroupTeam.group_id == group.id, CompetitionGroupTeam.fanta_team_id == team.id
+            ).first()
+            if not already:
+                db.add(CompetitionGroupTeam(group_id=group.id, fanta_team_id=team.id))
+
+
 def sync_results(db: Session, season: Season, comp_types: list[str] | None = None) -> dict:
     client = LegheClient()
     client.login()
@@ -155,6 +212,10 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
             is_cup = comp_type not in {"GOLD", "BRONZE", "CARBON", "SILVER"}
             excel_bytes = client.download_results_excel(comp.leghe_id, comp_type)
             matches = parse_calendar_excel(excel_bytes, is_cup)
+            if is_cup:
+                groups = parse_group_teams(excel_bytes)
+                if groups:
+                    _sync_groups(db, comp, groups, name_to_team)
 
             imported = updated = 0
             unmatched: set[str] = set()
