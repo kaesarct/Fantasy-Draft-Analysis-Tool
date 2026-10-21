@@ -217,9 +217,10 @@ const PHASE_LABELS: Record<string, string> = {
     .empty-msg { text-align: center; padding: 32px; color: var(--text-muted); }
 
     .groups-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 16px; margin-bottom: 28px;
     }
+    @media (max-width: 800px) { .groups-grid { grid-template-columns: 1fr; } }
     .group-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
     .group-title { font-weight: 700; font-size: 13px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
     .group-table { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 12px; }
