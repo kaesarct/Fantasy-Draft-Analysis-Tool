@@ -16,8 +16,9 @@ from app.models.competition import (
 )
 from app.models.fanta_team import FantaTeam
 from app.models.season import Season
+from app.services.competition_provisioning import _ensure_league_and_competition
 from app.services.leghe_client import LegheClient
-from app.services.leghe_competition_sync import ensure_competitions
+from app.services.leghe_competition_sync import KNOWN_TYPES, NAME_MAP, ensure_competitions
 
 GIORNATA_RE = re.compile(r"(\d+)ª\s+Giornata\s+lega", re.IGNORECASE)
 GOALS_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
@@ -165,6 +166,89 @@ def _sync_groups(db: Session, comp: Competition, groups: dict[str, set[str]], na
                 db.add(CompetitionGroupTeam(group_id=group.id, fanta_team_id=team.id))
 
 
+def _import_calendar(
+    db: Session, comp: Competition, comp_type: str, excel_bytes: bytes, name_to_team: dict[str, FantaTeam]
+) -> dict:
+    """Importa partite e (per le coppe) gironi da un Excel 'Calendario' gia'
+    scaricato: usata sia dalla sync automatica sia dal caricamento manuale."""
+    is_cup = comp_type not in {"GOLD", "BRONZE", "CARBON", "SILVER"}
+    matches = parse_calendar_excel(excel_bytes, is_cup)
+    if is_cup:
+        groups = parse_group_teams(excel_bytes)
+        if groups:
+            _sync_groups(db, comp, groups, name_to_team)
+
+    imported = updated = 0
+    unmatched: set[str] = set()
+    for m in matches:
+        home_team = name_to_team.get(_name_key(m["home_name"]))
+        away_team = name_to_team.get(_name_key(m["away_name"]))
+        if not home_team:
+            unmatched.add(m["home_name"])
+        if not away_team:
+            unmatched.add(m["away_name"])
+        if not home_team or not away_team:
+            continue
+
+        existing = db.query(MatchResult).filter(
+            MatchResult.competition_id == comp.id,
+            MatchResult.match_day == m["match_day"],
+            MatchResult.fanta_team_home_id == home_team.id,
+            MatchResult.fanta_team_away_id == away_team.id,
+        ).first()
+        values = dict(
+            score_home=m["score_home"], score_away=m["score_away"],
+            goals_home=m["goals_home"], goals_away=m["goals_away"],
+            phase=m["phase"],
+        )
+        if existing:
+            for k, v in values.items():
+                setattr(existing, k, v)
+            updated += 1
+        else:
+            db.add(MatchResult(
+                competition_id=comp.id, match_day=m["match_day"],
+                fanta_team_home_id=home_team.id, fanta_team_away_id=away_team.id,
+                **values,
+            ))
+            imported += 1
+
+    db.commit()
+    return {"matches_imported": imported, "matches_updated": updated, "teams_unmatched": sorted(unmatched)}
+
+
+def import_calendar_file(db: Session, season: Season, excel_bytes: bytes) -> dict:
+    """Import manuale di un Excel 'Calendario' scaricato dal sito: la
+    competizione si riconosce dal titolo in A1 ("Calendario CIEMPIONS"), senza
+    login ne' chiamate a leghe.fantacalcio.it. Solleva ValueError se il file
+    non e' un calendario o la competizione non esiste per la stagione."""
+    try:
+        df = pd.read_excel(io.BytesIO(excel_bytes), header=None)
+    except Exception:
+        raise ValueError("File non leggibile: serve un Excel .xlsx scaricato da leghe.fantacalcio.it")
+    title = str(df.iat[0, 0]).strip() if df.shape[0] and df.shape[1] else ""
+    if not title.lower().startswith("calendario "):
+        raise ValueError("Il file non sembra un 'Calendario' di leghe.fantacalcio.it (titolo mancante in A1)")
+    raw_name = title[len("calendario "):].strip().upper()
+    comp_type = NAME_MAP.get(raw_name, raw_name)
+    if comp_type not in KNOWN_TYPES:
+        raise ValueError(f"Competizione '{raw_name}' non riconosciuta")
+    comp = db.query(Competition).filter(Competition.season_id == season.id, Competition.type == comp_type).first()
+    created = comp is None
+    if created:
+        # Come ensure_competitions: una competizione che compare a stagione in
+        # corso (es. UEFA a fine gironi) viene creata dal suo primo calendario.
+        _ensure_league_and_competition(db, season, comp_type)
+        comp = db.query(Competition).filter(Competition.season_id == season.id, Competition.type == comp_type).first()
+
+    name_to_team = {
+        _name_key(t.name): t for t in db.query(FantaTeam).filter(FantaTeam.season_id == season.id)
+    }
+    result = _import_calendar(db, comp, comp_type, excel_bytes, name_to_team)
+    result["appena_creata"] = created
+    return {comp_type: result}
+
+
 def sync_results(db: Session, season: Season, comp_types: list[str] | None = None) -> dict:
     client = LegheClient()
     client.login()
@@ -209,55 +293,10 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
             for team in our_teams.values():
                 name_to_team.setdefault(_name_key(team.name), team)
 
-            is_cup = comp_type not in {"GOLD", "BRONZE", "CARBON", "SILVER"}
-            excel_bytes = client.download_results_excel(comp.leghe_id, comp_type)
-            matches = parse_calendar_excel(excel_bytes, is_cup)
-            if is_cup:
-                groups = parse_group_teams(excel_bytes)
-                if groups:
-                    _sync_groups(db, comp, groups, name_to_team)
-
-            imported = updated = 0
-            unmatched: set[str] = set()
-            for m in matches:
-                home_team = name_to_team.get(_name_key(m["home_name"]))
-                away_team = name_to_team.get(_name_key(m["away_name"]))
-                if not home_team:
-                    unmatched.add(m["home_name"])
-                if not away_team:
-                    unmatched.add(m["away_name"])
-                if not home_team or not away_team:
-                    continue
-
-                existing = db.query(MatchResult).filter(
-                    MatchResult.competition_id == comp.id,
-                    MatchResult.match_day == m["match_day"],
-                    MatchResult.fanta_team_home_id == home_team.id,
-                    MatchResult.fanta_team_away_id == away_team.id,
-                ).first()
-                values = dict(
-                    score_home=m["score_home"], score_away=m["score_away"],
-                    goals_home=m["goals_home"], goals_away=m["goals_away"],
-                    phase=m["phase"],
-                )
-                if existing:
-                    for k, v in values.items():
-                        setattr(existing, k, v)
-                    updated += 1
-                else:
-                    db.add(MatchResult(
-                        competition_id=comp.id, match_day=m["match_day"],
-                        fanta_team_home_id=home_team.id, fanta_team_away_id=away_team.id,
-                        **values,
-                    ))
-                    imported += 1
-
-            db.commit()
-            report[comp_type] = {
-                "matches_imported": imported, "matches_updated": updated,
-                "teams_unmatched": sorted(unmatched),
-                "appena_creata": comp_type in newly_created,
-            }
+            report[comp_type] = _import_calendar(
+                db, comp, comp_type, client.download_results_excel(comp.leghe_id, comp_type), name_to_team
+            )
+            report[comp_type]["appena_creata"] = comp_type in newly_created
         except Exception as e:
             db.rollback()
             report[comp_type] = {"error": str(e)}

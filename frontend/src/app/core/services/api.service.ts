@@ -443,6 +443,13 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/leghe-sync/sync-results`, {}, { params });
   }
 
+  importLegheCalendarFile(seasonId: number, file: File): Observable<any> {
+    const form = new FormData();
+    form.append('file', file);
+    const params = new HttpParams().set('season_id', seasonId);
+    return this.http.post<any>(`${this.base}/leghe-sync/import-calendar-file`, form, { params });
+  }
+
   syncLegheMatchdayScores(seasonId: number): Observable<any> {
     const params = new HttpParams().set('season_id', seasonId);
     return this.http.post<any>(`${this.base}/leghe-sync/sync-matchday-scores`, {}, { params });

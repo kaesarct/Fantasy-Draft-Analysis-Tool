@@ -1,6 +1,7 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { catchError, concatMap, from, map, of, reduce } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { DropdownModule } from 'primeng/dropdown';
 import { InputTextModule } from 'primeng/inputtext';
@@ -53,7 +54,13 @@ function slugUsername(name: string): string {
           <button pButton label="Carica da leghe.fantacalcio.it" icon="pi pi-download" [loading]="loading()" [disabled]="!selectedSeasonId" (click)="load()"></button>
           <button pButton label="🎯 Sync punteggi + classifiche (Goku/Oscar)" class="p-button-outlined" [loading]="syncingScores()" [disabled]="!selectedSeasonId" (click)="syncMatchdayScores()"></button>
           <button pButton label="Sync risultati/calendario" icon="pi pi-chart-bar" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="syncResults()"></button>
+          <button pButton label="Carica Excel calendario" icon="pi pi-upload" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="calendarFile.click()"></button>
+          <input #calendarFile type="file" accept=".xlsx" multiple hidden (change)="importCalendarFile($event)" />
         </div>
+        <p class="text-muted" style="font-size:12px; margin-top:6px;">
+          <strong>Carica Excel calendario</strong>: alternativa senza login automatico. Scarica da leghe.fantacalcio.it
+          (Calendario → Esporta Excel) i file delle competizioni e caricali qui anche tutti insieme, o solo quelli che hai (Coppa Italia, Ciempions, UEFA, Euro Cup possono mancare): la competizione si riconosce dal titolo di ogni file e, se non esiste ancora (es. UEFA), viene creata.
+        </p>
         <p class="text-muted" style="font-size:12px; margin-top:6px;">
           <strong>Sync punteggi</strong> (il pulsante lancia di seguito anche la sync risultati, cosi' popola con un click anche le Classifiche): fonte usata da Premio Goku/Oscar, copre tutte le competizioni
           collegate incluso Silver, ma non dice chi ha giocato contro chi. <strong>Sync risultati/calendario</strong>:
@@ -112,6 +119,9 @@ function slugUsername(name: string): string {
                 <span class="text-negative">⚠️ {{ kv.data.error }}</span>
               } @else {
                 {{ kv.data.matches_imported }} importate, {{ kv.data.matches_updated }} aggiornate
+                @if (kv.data.appena_creata) {
+                  <span class="text-muted">(competizione creata ora)</span>
+                }
                 @if (kv.data.teams_unmatched?.length) {
                   <span class="text-negative">— squadre non riconosciute: {{ kv.data.teams_unmatched.join(', ') }}</span>
                 }
@@ -393,6 +403,33 @@ export class AdminLegheSyncComponent implements OnInit {
       error: err => {
         this.syncingResults.set(false);
         this.error.set(err.error?.detail || 'Errore durante la sync dei risultati.');
+      },
+    });
+  }
+
+  importCalendarFile(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (!files.length || !this.selectedSeasonId) return;
+    const seasonId = this.selectedSeasonId;
+    this.syncingResults.set(true);
+    this.error.set('');
+    this.resultsReport.set(null);
+    from(files).pipe(
+      concatMap(file => this.api.importLegheCalendarFile(seasonId, file).pipe(
+        catchError(err => of({ [file.name]: { error: err.error?.detail || "Errore durante l'import del file." } })),
+      )),
+      reduce((all, res) => ({ ...all, ...res }), {} as Record<string, any>),
+      map(all => all),
+    ).subscribe({
+      next: all => {
+        this.syncingResults.set(false);
+        this.resultsReport.set(all);
+      },
+      error: () => {
+        this.syncingResults.set(false);
+        this.error.set("Errore durante l'import dei file.");
       },
     });
   }

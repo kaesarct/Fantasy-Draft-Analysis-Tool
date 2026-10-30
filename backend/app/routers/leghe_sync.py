@@ -7,7 +7,7 @@ import functools
 import logging
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -17,7 +17,7 @@ from app.models.fanta_allenatore import FantaAllenatore
 from app.services.auth_service import require_admin
 from app.services.leghe_client import LegheClient
 from app.services.leghe_competition_sync import ensure_competitions
-from app.services.leghe_results_sync import sync_results
+from app.services.leghe_results_sync import import_calendar_file, sync_results
 from app.services.leghe_lineup_scores_sync import sync_matchday_scores
 from app.services.competition_provisioning import MAIN_LEAGUE_TYPES, _ensure_league_and_competition
 
@@ -323,6 +323,30 @@ def sync_leghe_results(
     if not season:
         raise HTTPException(404, "Stagione non trovata")
     return sync_results(db, season)
+
+
+MAX_CALENDAR_FILE_BYTES = 5 * 1024 * 1024
+
+
+@router.post("/import-calendar-file")
+def import_leghe_calendar_file(
+    season_id: int, file: UploadFile = File(...),
+    db: Session = Depends(get_db), _admin: str = Depends(require_admin),
+):
+    """Alternativa manuale a /sync-results: carica un Excel 'Calendario'
+    scaricato da leghe.fantacalcio.it con il browser."""
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Serve un file .xlsx")
+    content = file.file.read(MAX_CALENDAR_FILE_BYTES + 1)
+    if len(content) > MAX_CALENDAR_FILE_BYTES:
+        raise HTTPException(413, "File troppo grande (max 5 MB)")
+    try:
+        return import_calendar_file(db, season, content)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/sync-matchday-scores")
