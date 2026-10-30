@@ -54,12 +54,15 @@ function slugUsername(name: string): string {
           <button pButton label="Carica da leghe.fantacalcio.it" icon="pi pi-download" [loading]="loading()" [disabled]="!selectedSeasonId" (click)="load()"></button>
           <button pButton label="🎯 Sync punteggi + classifiche (Goku/Oscar)" class="p-button-outlined" [loading]="syncingScores()" [disabled]="!selectedSeasonId" (click)="syncMatchdayScores()"></button>
           <button pButton label="Sync risultati/calendario" icon="pi pi-chart-bar" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="syncResults()"></button>
-          <button pButton label="Carica Excel calendario" icon="pi pi-upload" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="calendarFile.click()"></button>
+          <button pButton label="Carica Excel (calendari e formazioni)" icon="pi pi-upload" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="calendarFile.click()"></button>
           <input #calendarFile type="file" accept=".xlsx" multiple hidden (change)="importCalendarFile($event)" />
         </div>
         <p class="text-muted" style="font-size:12px; margin-top:6px;">
-          <strong>Carica Excel calendario</strong>: alternativa senza login automatico. Scarica da leghe.fantacalcio.it
-          (Calendario → Esporta Excel) i file delle competizioni e caricali qui anche tutti insieme, o solo quelli che hai (Coppa Italia, Ciempions, UEFA, Euro Cup possono mancare): la competizione si riconosce dal titolo di ogni file e, se non esiste ancora (es. UEFA), viene creata.
+          <strong>Carica Excel</strong>: alternativa senza login automatico. Scarica da leghe.fantacalcio.it
+          i file delle competizioni e caricali qui anche tutti insieme, o solo quelli che hai (Coppa Italia, Ciempions, UEFA, Euro Cup possono mancare): tipo di file e competizione si riconoscono dal titolo di ogni file e, se la competizione non esiste ancora (es. UEFA), viene creata.
+          I <strong>Calendari</strong> (Calendario → Esporta Excel) portano partite, gironi e il numero di giornata di Serie A di ogni turno.
+          Le <strong>Formazioni</strong> (es. «GOLD · Giornata 4») portano il totale di ogni squadra: servono i Calendari già caricati, per sapere a quale giornata di Serie A corrispondono.
+          Dopo ogni caricamento parte il controllo di coerenza di Silver e di Goku/Oscar.
         </p>
         <p class="text-muted" style="font-size:12px; margin-top:6px;">
           <strong>Sync punteggi</strong> (il pulsante lancia di seguito anche la sync risultati, cosi' popola con un click anche le Classifiche): fonte usata da Premio Goku/Oscar, copre tutte le competizioni
@@ -117,8 +120,20 @@ function slugUsername(name: string): string {
               <strong>{{ kv.type }}</strong>:
               @if (kv.data.error) {
                 <span class="text-negative">⚠️ {{ kv.data.error }}</span>
+              } @else if (kv.data.scores_imported !== undefined) {
+                {{ kv.data.scores_imported }} punteggi importati, {{ kv.data.scores_updated }} aggiornati
+                <span class="text-muted">(giornata {{ kv.data.league_day }} = {{ kv.data.serie_a_day }}ª di Serie A)</span>
+                @if (kv.data.appena_creata) {
+                  <span class="text-muted">(competizione creata ora)</span>
+                }
+                @if (kv.data.teams_unmatched?.length) {
+                  <span class="text-negative">— squadre non riconosciute: {{ kv.data.teams_unmatched.join(', ') }}</span>
+                }
               } @else {
                 {{ kv.data.matches_imported }} importate, {{ kv.data.matches_updated }} aggiornate
+                @if (kv.data.serie_a_days) {
+                  <span class="text-muted">({{ kv.data.serie_a_days }} giornate associate alla Serie A)</span>
+                }
                 @if (kv.data.appena_creata) {
                   <span class="text-muted">(competizione creata ora)</span>
                 }
@@ -126,10 +141,69 @@ function slugUsername(name: string): string {
                   <span class="text-negative">— squadre non riconosciute: {{ kv.data.teams_unmatched.join(', ') }}</span>
                 }
               }
+              @if (kv.data.teams_unmatched?.length && kv.data.rename_candidates?.length) {
+                @for (n of kv.data.teams_unmatched; track n) {
+                  <div class="rename-row">
+                    <span>Il file chiama «{{ n }}» una squadra che non riconosco. Aggiornare il nome di:</span>
+                    <p-dropdown
+                      [options]="candidateOptions(kv.data.rename_candidates)"
+                      [(ngModel)]="renameChoice[n]"
+                      placeholder="Scegli la squadra"
+                      [filter]="true"
+                      appendTo="body"
+                    />
+                    <button pButton label="Rinomina" class="p-button-sm" [loading]="renaming()" [disabled]="!renameChoice[n]" (click)="renameTeam(n)"></button>
+                  </div>
+                }
+              }
             </div>
           }
           @empty {
             <p class="text-muted">Nessuna competizione con id leghe.fantacalcio.it collegato per questa stagione — collega prima le squadre qui sotto.</p>
+          }
+        </div>
+      }
+
+      @if (renameNotice()) {
+        <div class="card status-msg mb-4">{{ renameNotice() }}</div>
+      }
+
+      @if (consistency(); as c) {
+        <div class="card status-msg mb-4" [class.error]="c.silver.discrepancies.length">
+          <div><strong>Controllo coerenza</strong></div>
+          <div>
+            <strong>Silver</strong>:
+            @if (c.silver.discrepancies.length) {
+              <span class="text-negative">⚠️ {{ c.silver.discrepancies.length }} differenze ({{ c.silver.checked }} confronti completi)</span>
+            } @else if (c.silver.checked) {
+              ✅ coerente con i campionati ({{ c.silver.checked }} confronti squadra/giornata)
+            } @else {
+              <span class="text-muted">nessun confronto possibile: mancano i punteggi di Silver o dei campionati</span>
+            }
+          </div>
+          @for (d of c.silver.discrepancies.slice(0, 30); track $index) {
+            <div class="text-negative">
+              ⚠️ {{ d.fanta_team_name }}, giornata {{ d.match_day }}:
+              @if (d.kind === 'mismatch') {
+                Silver {{ d.silver_value }} contro {{ d.league_type }} {{ d.league_value }}
+              } @else if (d.kind === 'missing_silver') {
+                manca in Silver (in {{ d.league_type }}: {{ d.league_value }})
+              } @else {
+                manca in {{ d.league_type }} (in Silver: {{ d.silver_value }})
+              }
+            </div>
+          }
+          @if (c.silver.discrepancies.length > 30) {
+            <div class="text-muted">…e altre {{ c.silver.discrepancies.length - 30 }}</div>
+          }
+          @for (g of c.goku; track $index) {
+            <div>🏆 <strong>Goku</strong>: {{ g.fanta_team_name }} {{ g.score }} ({{ g.competition_type }}, {{ g.round_label }})</div>
+          }
+          @for (o of c.oscar; track $index) {
+            <div>🥔 <strong>Oscar</strong>: {{ o.fanta_team_name }} {{ o.score }} ({{ o.competition_type }}, {{ o.round_label }})</div>
+          }
+          @if (!c.goku.length && !c.oscar.length) {
+            <div class="text-muted">Goku/Oscar: nessun punteggio disponibile</div>
           }
         </div>
       }
@@ -267,6 +341,7 @@ function slugUsername(name: string): string {
     .page-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
     .page-header .text-secondary { margin-bottom: 12px; }
     .toolbar { display: flex; align-items: center; gap: 10px; }
+    .rename-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 2px; }
     .filter-drop { min-width: 160px; }
     .mb-2 { margin-bottom: 8px; }
     .mb-4 { margin-bottom: 24px; }
@@ -307,6 +382,11 @@ export class AdminLegheSyncComponent implements OnInit {
   report = signal<any>(null);
   resultsReport = signal<Record<string, any> | null>(null);
   scoresReport = signal<Record<string, any> | null>(null);
+  consistency = signal<any>(null);
+  renaming = signal(false);
+  renameNotice = signal('');
+  renameChoice: Record<string, number | null> = {};
+  private lastFiles: File[] = [];
 
   decisions: Record<number, TeamDecisionState> = {};
 
@@ -411,11 +491,22 @@ export class AdminLegheSyncComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
     input.value = '';
-    if (!files.length || !this.selectedSeasonId) return;
+    this.renameNotice.set('');
+    this.runImport(files);
+  }
+
+  private runImport(selected: File[]) {
+    if (!selected.length || !this.selectedSeasonId) return;
     const seasonId = this.selectedSeasonId;
+    // Le Formazioni hanno bisogno della giornata di Serie A portata dai Calendari: vanno caricate dopo
+    const isLineup = (f: File) => f.name.toLowerCase().includes('formazioni');
+    const files = [...selected].sort((a, b) => Number(isLineup(a)) - Number(isLineup(b)));
+    this.lastFiles = files;
     this.syncingResults.set(true);
     this.error.set('');
     this.resultsReport.set(null);
+    this.consistency.set(null);
+    this.renameChoice = {};
     from(files).pipe(
       concatMap(file => this.api.importLegheCalendarFile(seasonId, file).pipe(
         catchError(err => of({ [file.name]: { error: err.error?.detail || "Errore durante l'import del file." } })),
@@ -426,6 +517,17 @@ export class AdminLegheSyncComponent implements OnInit {
       next: all => {
         this.syncingResults.set(false);
         this.resultsReport.set(all);
+        for (const data of Object.values(all)) {
+          // Un solo nome sconosciuto e una sola squadra senza corrispondenza: abbinamento ovvio, preselezionato
+          // (la rinomina resta comunque da confermare con il pulsante).
+          if (data.teams_unmatched?.length === 1 && data.rename_candidates?.length === 1) {
+            this.renameChoice[data.teams_unmatched[0]] = data.rename_candidates[0].id;
+          }
+        }
+        this.api.getConsistencyCheck(seasonId).subscribe({
+          next: c => this.consistency.set(c),
+          error: err => this.error.set(err.error?.detail || 'Errore durante il controllo di coerenza.'),
+        });
       },
       error: () => {
         this.syncingResults.set(false);
@@ -436,6 +538,28 @@ export class AdminLegheSyncComponent implements OnInit {
 
   resultsReportEntries(report: Record<string, any>): { type: string; data: any }[] {
     return Object.entries(report).map(([type, data]) => ({ type, data }));
+  }
+
+  candidateOptions(candidates: { id: number; name: string }[]) {
+    return candidates.map(c => ({ label: c.name, value: c.id }));
+  }
+
+  renameTeam(newName: string) {
+    const teamId = this.renameChoice[newName];
+    if (!teamId || !this.selectedSeasonId) return;
+    this.renaming.set(true);
+    this.error.set('');
+    this.api.renameLegheTeam(this.selectedSeasonId, teamId, newName).subscribe({
+      next: res => {
+        this.renaming.set(false);
+        this.renameNotice.set(`✅ «${res.old_name}» rinominata in «${res.new_name}» (solo stagione corrente). Reimporto i file.`);
+        this.runImport(this.lastFiles);
+      },
+      error: err => {
+        this.renaming.set(false);
+        this.error.set(err.error?.detail || 'Errore durante la rinomina della squadra.');
+      },
+    });
   }
 
   syncMatchdayScores() {

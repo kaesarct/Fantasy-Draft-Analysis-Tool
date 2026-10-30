@@ -135,14 +135,19 @@ const PHASE_LABELS: Record<string, string> = {
                     <th style="width:40px">#</th>
                     <th>Squadra</th>
                     <th style="text-align:center">G</th>
-                    <th style="text-align:center">V</th>
-                    <th style="text-align:center">P</th>
-                    <th style="text-align:center">S</th>
-                    <th style="text-align:center">GF</th>
-                    <th style="text-align:center">GS</th>
-                    <th style="text-align:center;font-weight:800;color:var(--accent-green)">Pts</th>
+                    @if (tab.type !== 'SILVER') {
+                      <th style="text-align:center">V</th>
+                      <th style="text-align:center">P</th>
+                      <th style="text-align:center">S</th>
+                      <th style="text-align:center">GF</th>
+                      <th style="text-align:center">GS</th>
+                      <th style="text-align:center;font-weight:800;color:var(--accent-green)">Pts</th>
+                    }
+                    <th style="text-align:center">{{ tab.type === 'SILVER' ? 'Acc.' : 'Tot. punti' }}</th>
                     @if (tab.type === 'SILVER') {
-                      <th style="text-align:center">Acc.</th>
+                      <th style="text-align:center">Media</th>
+                      <th style="text-align:center">Migliore</th>
+                      <th style="text-align:center">Peggiore</th>
                     }
                   </tr>
                 </ng-template>
@@ -155,19 +160,24 @@ const PHASE_LABELS: Record<string, string> = {
                       <strong>{{ s.fanta_team_name ?? ('Squadra #' + s.fanta_team_id) }}</strong>
                     </td>
                     <td style="text-align:center">{{ s.played ?? (s.wins + s.draws + s.losses) }}</td>
-                    <td style="text-align:center;color:var(--accent-green)">{{ s.wins }}</td>
-                    <td style="text-align:center">{{ s.draws }}</td>
-                    <td style="text-align:center;color:var(--accent-red)">{{ s.losses }}</td>
-                    <td style="text-align:center">{{ s.goals_for | number:'1.0-0' }}</td>
-                    <td style="text-align:center">{{ s.goals_against | number:'1.0-0' }}</td>
-                    <td style="text-align:center;font-weight:800;font-size:15px">{{ s.pts }}</td>
+                    @if (tab.type !== 'SILVER') {
+                      <td style="text-align:center;color:var(--accent-green)">{{ s.wins }}</td>
+                      <td style="text-align:center">{{ s.draws }}</td>
+                      <td style="text-align:center;color:var(--accent-red)">{{ s.losses }}</td>
+                      <td style="text-align:center">{{ s.goals_for | number:'1.0-0' }}</td>
+                      <td style="text-align:center">{{ s.goals_against | number:'1.0-0' }}</td>
+                      <td style="text-align:center;font-weight:800;font-size:15px">{{ s.pts }}</td>
+                    }
+                    <td style="text-align:center">{{ s.total_score ? (s.total_score | number:'1.0-1') : '—' }}</td>
                     @if (tab.type === 'SILVER') {
-                      <td style="text-align:center">{{ s.total_score | number:'1.0-1' }}</td>
+                      <td style="text-align:center">{{ s.average != null ? (s.average | number:'1.0-2') : '—' }}</td>
+                      <td style="text-align:center;color:var(--accent-green)">{{ s.best != null ? (s.best | number:'1.0-1') : '—' }}</td>
+                      <td style="text-align:center;color:var(--accent-red)">{{ s.worst != null ? (s.worst | number:'1.0-1') : '—' }}</td>
                     }
                   </tr>
                 </ng-template>
                 <ng-template pTemplate="emptymessage">
-                  <tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted)">
+                  <tr><td [attr.colspan]="tab.type === 'SILVER' ? 7 : 10" style="text-align:center;padding:32px;color:var(--text-muted)">
                     Nessun dato disponibile. Avvia un sync per caricare i dati.
                   </td></tr>
                 </ng-template>

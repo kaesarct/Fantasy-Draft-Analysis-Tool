@@ -451,6 +451,17 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/leghe-sync/import-calendar-file`, form, { params });
   }
 
+  renameLegheTeam(seasonId: number, teamId: number, newName: string): Observable<any> {
+    return this.http.post<any>(`${this.base}/leghe-sync/rename-team`, {
+      season_id: seasonId, team_id: teamId, new_name: newName,
+    });
+  }
+
+  getConsistencyCheck(seasonId: number): Observable<any> {
+    const params = new HttpParams().set('season_id', seasonId);
+    return this.http.get<any>(`${this.base}/awards/consistency-check`, { params });
+  }
+
   syncLegheMatchdayScores(seasonId: number): Observable<any> {
     const params = new HttpParams().set('season_id', seasonId);
     return this.http.post<any>(`${this.base}/leghe-sync/sync-matchday-scores`, {}, { params });

@@ -171,20 +171,24 @@ def _absolute_record(
     return (max if pick_max else min)(candidates, key=lambda c: c["score"])
 
 
+def _current_goku_oscar(db: Session, season: Season) -> tuple[list[dict], list[dict]]:
+    performances = _matchday_scores(db, season.id, _AWARD_COMPETITION_TYPES)
+    if not performances:
+        return [], []
+    max_score = max(p["score"] for p in performances)
+    min_score = min(p["score"] for p in performances)
+    return (
+        [p for p in performances if p["score"] == max_score],
+        [p for p in performances if p["score"] == min_score],
+    )
+
+
 @router.get("/awards/overview")
 def get_awards_overview(db: Session = Depends(get_db)):
     current_season = db.query(Season).filter(Season.is_current == True).first()
     current_season_label = current_season.label if current_season else None
 
-    goku_current: list[dict] = []
-    oscar_current: list[dict] = []
-    if current_season:
-        performances = _matchday_scores(db, current_season.id, _AWARD_COMPETITION_TYPES)
-        if performances:
-            max_score = max(p["score"] for p in performances)
-            min_score = min(p["score"] for p in performances)
-            goku_current = [p for p in performances if p["score"] == max_score]
-            oscar_current = [p for p in performances if p["score"] == min_score]
+    goku_current, oscar_current = _current_goku_oscar(db, current_season) if current_season else ([], [])
 
     history = [
         {
@@ -205,10 +209,7 @@ def get_awards_overview(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/awards/silver-consistency")
-def get_silver_consistency(
-    season_id: int | None = None, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
-):
+def _season_or_404(db: Session, season_id: int | None) -> Season:
     season = (
         db.query(Season).filter(Season.id == season_id).first()
         if season_id else
@@ -216,7 +217,13 @@ def get_silver_consistency(
     )
     if not season:
         raise HTTPException(404, "Stagione non trovata")
+    return season
 
+
+def _silver_discrepancies(db: Session, season: Season) -> tuple[list[dict], int]:
+    """Differenze tra Silver e il campionato di appartenenza, e quanti
+    confronti giornata-per-squadra sono stati fatti con entrambi i valori."""
+    checked = 0
     silver_comp = db.query(Competition).filter(
         Competition.season_id == season.id, Competition.type == CompetitionType.SILVER
     ).first()
@@ -280,14 +287,43 @@ def get_silver_consistency(
                 kind = "missing_league"
             elif silver_value is None:
                 kind = "missing_silver"
-            elif abs(league_value - silver_value) > _SILVER_TOLERANCE:
-                kind = "mismatch"
             else:
-                continue
+                checked += 1
+                if abs(league_value - silver_value) <= _SILVER_TOLERANCE:
+                    continue
+                kind = "mismatch"
             discrepancies.append({
                 "fanta_team_id": team.id, "fanta_team_name": team.name, "match_day": match_day,
                 "league_type": level, "league_value": league_value, "silver_value": silver_value,
                 "kind": kind,
             })
 
+    return discrepancies, checked
+
+
+def build_consistency_report(db: Session, season: Season) -> dict:
+    silver, silver_checked = _silver_discrepancies(db, season)
+    goku, oscar = _current_goku_oscar(db, season)
+    return {
+        "season_label": season.label,
+        "silver": {"checked": silver_checked, "discrepancies": silver},
+        "goku": goku, "oscar": oscar,
+    }
+
+
+@router.get("/awards/silver-consistency")
+def get_silver_consistency(
+    season_id: int | None = None, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    season = _season_or_404(db, season_id)
+    discrepancies, _ = _silver_discrepancies(db, season)
     return {"season_label": season.label, "discrepancies": discrepancies}
+
+
+@router.get("/awards/consistency-check")
+def get_consistency_check(
+    season_id: int | None = None, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    """Controllo dopo un caricamento di file: Silver contro campionati (devono
+    coincidere; le coppe possono avere una formazione diversa) e Goku/Oscar attuali."""
+    return build_consistency_report(db, _season_or_404(db, season_id))

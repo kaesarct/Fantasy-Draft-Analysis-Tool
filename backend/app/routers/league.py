@@ -248,21 +248,27 @@ def _live_standings(db: Session, comp: Competition) -> list[dict]:
         for (team_id, day), score in by_day.items():
             row = rows[team_id]
             row["total_score"] += score
+            row["played"] = row.get("played", 0) + 1
+            row["best"] = max(row.get("best", score), score)
+            row["worst"] = min(row.get("worst", score), score)
             row["match_day"] = max(row["match_day"], day)
+        for row in rows.values():
+            row["average"] = round(row["total_score"] / row["played"], 2) if row.get("played") else None
         return sorted(rows.values(), key=lambda r: r["total_score"], reverse=True)
 
     for m in db.query(MatchResult).filter(MatchResult.competition_id == comp.id):
-        for team_id, own, opp, score_for, score_against in (
-            (m.fanta_team_home_id, m.goals_home, m.goals_away, m.score_home, m.score_away),
-            (m.fanta_team_away_id, m.goals_away, m.goals_home, m.score_away, m.score_home),
+        for team_id, own, opp, score_for in (
+            (m.fanta_team_home_id, m.goals_home, m.goals_away, m.score_home),
+            (m.fanta_team_away_id, m.goals_away, m.goals_home, m.score_away),
         ):
             row = rows.get(team_id)
             if not row:
                 continue
             own, opp = own or 0, opp or 0
             row["match_day"] = max(row["match_day"], m.match_day)
-            row["goals_for"] += score_for or 0.0
-            row["goals_against"] += score_against or 0.0
+            row["goals_for"] += own
+            row["goals_against"] += opp
+            row["total_score"] += score_for or 0.0
             if own > opp:
                 row["wins"] += 1
                 row["pts"] += 3
@@ -271,7 +277,7 @@ def _live_standings(db: Session, comp: Competition) -> list[dict]:
                 row["pts"] += 1
             else:
                 row["losses"] += 1
-    return sorted(rows.values(), key=lambda r: (r["pts"], r["goals_for"]), reverse=True)
+    return sorted(rows.values(), key=lambda r: (r["pts"], r["total_score"]), reverse=True)
 
 
 @seasons_router.get("/{season_id}/standings")

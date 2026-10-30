@@ -135,6 +135,22 @@ class CompetitionStanding(Base):
     fanta_team = relationship("FantaTeam", back_populates="standings")
 
 
+class CompetitionMatchday(Base):
+    """Giornata di Serie A su cui si gioca ogni turno di una competizione, letta
+    dal Calendario di leghe.fantacalcio.it (anche per i turni futuri). Le coppe non
+    giocano ogni giornata, quindi non c'e' un offset fisso dal numero di lega."""
+    __tablename__ = "competition_matchdays"
+
+    id = Column(Integer, primary_key=True, index=True)
+    competition_id = Column(Integer, ForeignKey("competitions.id"), nullable=False)
+    match_day = Column(Integer, nullable=False)       # numero di giornata di lega
+    serie_a_day = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("competition_id", "match_day", name="uq_competition_matchday"),
+    )
+
+
 class CompetitionMatchdayScore(Base):
     """Punteggio di una squadra in una singola giornata, senza bisogno di un
     avversario (a differenza di MatchResult) — sincronizzato da leghe.fantacalcio.it

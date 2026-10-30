@@ -12,15 +12,18 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.models.competition import (
-    Competition, CompetitionGroup, CompetitionGroupTeam, CompetitionPhase, MatchResult,
+    Competition, CompetitionGroup, CompetitionGroupTeam, CompetitionMatchday, CompetitionMatchdayScore,
+    CompetitionPhase, MatchResult,
 )
-from app.models.fanta_team import FantaTeam
+from app.models.fanta_team import FantaTeam, League
 from app.models.season import Season
-from app.services.competition_provisioning import _ensure_league_and_competition
+from app.services.competition_provisioning import MAIN_LEAGUE_TYPES, _ensure_league_and_competition
 from app.services.leghe_client import LegheClient
 from app.services.leghe_competition_sync import KNOWN_TYPES, NAME_MAP, ensure_competitions
 
 GIORNATA_RE = re.compile(r"(\d+)ª\s+Giornata\s+lega", re.IGNORECASE)
+SERIE_A_RE = re.compile(r"(\d+)ª\s+Giornata\s+serie\s+a", re.IGNORECASE)
+LINEUP_TITLE_RE = re.compile(r"^(.+?)\s*·\s*Giornata\s+(\d+)$", re.IGNORECASE)
 GOALS_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
 GIRONE_LETTER_RE = re.compile(r"^[A-Z]$")
 
@@ -48,6 +51,21 @@ def _phase_from_label(text: str) -> CompetitionPhase | None:
         return CompetitionPhase.SEMI_FINAL
     if "finale" in s:
         return CompetitionPhase.FINAL
+    return None
+
+
+def _serie_a_day_for_block(df, row: int, col: int) -> int | None:
+    """Giornata di Serie A scritta sulla stessa riga, a destra dell'intestazione
+    'Nª Giornata lega' e prima di quella del blocco successivo."""
+    for c in range(col + 1, df.shape[1]):
+        cell = df.iat[row, c]
+        if not isinstance(cell, str):
+            continue
+        if GIORNATA_RE.search(cell):
+            return None
+        match = SERIE_A_RE.search(cell)
+        if match:
+            return int(match.group(1))
     return None
 
 
@@ -111,6 +129,34 @@ def parse_calendar_excel(excel_bytes: bytes, is_cup: bool) -> list[dict]:
     return matches
 
 
+def parse_serie_a_days(excel_bytes: bytes) -> dict[int, int]:
+    """Giornata di lega -> giornata di Serie A, da tutte le intestazioni del
+    Calendario, anche dei turni non ancora giocati."""
+    df = pd.read_excel(io.BytesIO(excel_bytes), header=None)
+    days: dict[int, int] = {}
+    for idx in range(len(df)):
+        for col in range(df.shape[1]):
+            cell = df.iat[idx, col]
+            match = GIORNATA_RE.search(cell) if isinstance(cell, str) else None
+            serie_a_day = _serie_a_day_for_block(df, idx, col) if match else None
+            if serie_a_day is not None:
+                days[int(match.group(1))] = serie_a_day
+    return days
+
+
+def _save_matchdays(db: Session, comp: Competition, days: dict[int, int]) -> None:
+    existing = {
+        row.match_day: row
+        for row in db.query(CompetitionMatchday).filter(CompetitionMatchday.competition_id == comp.id)
+    }
+    for match_day, serie_a_day in days.items():
+        row = existing.get(match_day)
+        if row:
+            row.serie_a_day = serie_a_day
+        else:
+            db.add(CompetitionMatchday(competition_id=comp.id, match_day=match_day, serie_a_day=serie_a_day))
+
+
 def parse_group_teams(excel_bytes: bytes) -> dict[str, set[str]]:
     """Composizione dei gironi letta dall'Excel 'Calendario': la lettera in
     prima colonna di ogni riga partita indica il girone. Considera anche le
@@ -167,10 +213,12 @@ def _sync_groups(db: Session, comp: Competition, groups: dict[str, set[str]], na
 
 
 def _import_calendar(
-    db: Session, comp: Competition, comp_type: str, excel_bytes: bytes, name_to_team: dict[str, FantaTeam]
+    db: Session, comp: Competition, comp_type: str, excel_bytes: bytes, name_to_team: dict[str, FantaTeam],
+    matched_ids: set[int] | None = None,
 ) -> dict:
     """Importa partite e (per le coppe) gironi da un Excel 'Calendario' gia'
-    scaricato: usata sia dalla sync automatica sia dal caricamento manuale."""
+    scaricato: usata sia dalla sync automatica sia dal caricamento manuale.
+    `matched_ids` (facoltativo) raccoglie le squadre riconosciute nel file."""
     is_cup = comp_type not in {"GOLD", "BRONZE", "CARBON", "SILVER"}
     matches = parse_calendar_excel(excel_bytes, is_cup)
     if is_cup:
@@ -183,6 +231,8 @@ def _import_calendar(
     for m in matches:
         home_team = name_to_team.get(_name_key(m["home_name"]))
         away_team = name_to_team.get(_name_key(m["away_name"]))
+        if matched_ids is not None:
+            matched_ids.update(t.id for t in (home_team, away_team) if t)
         if not home_team:
             unmatched.add(m["home_name"])
         if not away_team:
@@ -213,40 +263,151 @@ def _import_calendar(
             ))
             imported += 1
 
+    serie_a_days = parse_serie_a_days(excel_bytes)
+    _save_matchdays(db, comp, serie_a_days)
     db.commit()
-    return {"matches_imported": imported, "matches_updated": updated, "teams_unmatched": sorted(unmatched)}
+    return {
+        "matches_imported": imported, "matches_updated": updated,
+        "serie_a_days": len(serie_a_days), "teams_unmatched": sorted(unmatched),
+    }
+
+
+def parse_lineup_totals(df) -> dict[str, float]:
+    """Totale di giornata di ogni squadra in un Excel 'Formazioni': nome della
+    squadra sopra la cella 'Modulo', con 'Totale' e il valore sulla stessa riga.
+    I blocchi sono affiancati su due colonne, tranne in Silver (uno sotto l'altro)."""
+    totals: dict[str, float] = {}
+    for row in range(1, len(df)):
+        for col in range(df.shape[1] - 5):
+            if df.iat[row, col] != "Modulo" or df.iat[row, col + 4] != "Totale":
+                continue
+            name = df.iat[row - 1, col]
+            total = pd.to_numeric(df.iat[row, col + 5], errors="coerce")
+            if not _is_blank(name) and not pd.isna(total):
+                totals[str(name).strip()] = float(total)
+    return totals
+
+
+def _serie_a_day(db: Session, season: Season, comp_type: str, league_day: int) -> int | None:
+    """Giornata di Serie A di un turno di lega/coppa, dal Calendario gia'
+    importato. Silver non ha un Calendario: gioca gli stessi turni dei campionati."""
+    types = list(MAIN_LEAGUE_TYPES) if comp_type == "SILVER" else [comp_type]
+    row = (
+        db.query(CompetitionMatchday.serie_a_day)
+        .join(Competition, Competition.id == CompetitionMatchday.competition_id)
+        .filter(
+            Competition.season_id == season.id, Competition.type.in_(types),
+            CompetitionMatchday.match_day == league_day,
+        )
+        .first()
+    )
+    return row[0] if row else None
+
+
+def _rename_candidates(db: Session, season: Season, comp_type: str, matched_ids: set[int]) -> list[dict]:
+    """Squadre della stagione che il file non ha riconosciuto: possibili
+    destinatarie di una rinomina (il file porta un nome nuovo). Per i campionati
+    solo quelle della stessa lega; per coppe e Silver tutte."""
+    query = db.query(FantaTeam).filter(FantaTeam.season_id == season.id)
+    if matched_ids:
+        query = query.filter(FantaTeam.id.notin_(matched_ids))
+    if comp_type in MAIN_LEAGUE_TYPES:
+        query = query.join(League, League.id == FantaTeam.league_id).filter(League.level == comp_type)
+    return [{"id": t.id, "name": t.name} for t in query.order_by(FantaTeam.name)]
+
+
+def _import_lineups(
+    db: Session, season: Season, comp: Competition, comp_type: str, league_day: int,
+    totals: dict[str, float], name_to_team: dict[str, FantaTeam], matched_ids: set[int],
+) -> dict:
+    """Salva i totali in CompetitionMatchdayScore, sulla giornata di Serie A
+    (la stessa numerazione della sync teamLineup). Senza corrispondenza nel
+    Calendario rifiuta il file: nessuna stima del numero di giornata."""
+    serie_a_day = _serie_a_day(db, season, comp_type, league_day)
+    if serie_a_day is None:
+        source = "Gold, Bronze o Carbon" if comp_type == "SILVER" else comp_type
+        raise ValueError(
+            f"{comp_type} giornata {league_day}: manca la corrispondenza con la giornata di Serie A, "
+            f"carica prima il Calendario di {source}"
+        )
+
+    imported = updated = 0
+    unmatched: list[str] = []
+    for name, total in totals.items():
+        team = name_to_team.get(_name_key(name))
+        if not team:
+            unmatched.append(name)
+            continue
+        matched_ids.add(team.id)
+        existing = db.query(CompetitionMatchdayScore).filter(
+            CompetitionMatchdayScore.competition_id == comp.id,
+            CompetitionMatchdayScore.fanta_team_id == team.id,
+            CompetitionMatchdayScore.match_day == serie_a_day,
+        ).first()
+        if existing:
+            existing.score = total
+            updated += 1
+        else:
+            db.add(CompetitionMatchdayScore(
+                competition_id=comp.id, fanta_team_id=team.id, match_day=serie_a_day, score=total,
+            ))
+            imported += 1
+
+    db.commit()
+    return {
+        "scores_imported": imported, "scores_updated": updated,
+        "league_day": league_day, "serie_a_day": serie_a_day, "teams_unmatched": sorted(unmatched),
+    }
 
 
 def import_calendar_file(db: Session, season: Season, excel_bytes: bytes) -> dict:
-    """Import manuale di un Excel 'Calendario' scaricato dal sito: la
-    competizione si riconosce dal titolo in A1 ("Calendario CIEMPIONS"), senza
-    login ne' chiamate a leghe.fantacalcio.it. Solleva ValueError se il file
-    non e' un calendario o la competizione non esiste per la stagione."""
+    """Import manuale di un Excel scaricato dal sito, senza login ne' chiamate a
+    leghe.fantacalcio.it. Il tipo di file e la competizione si riconoscono dal
+    titolo in A1: "Calendario CIEMPIONS" (partite e gironi) oppure
+    "GOLD · Giornata 4" (formazioni: totale di ogni squadra). Solleva
+    ValueError se il file non e' riconosciuto o non si puo' collocare."""
     try:
         df = pd.read_excel(io.BytesIO(excel_bytes), header=None)
     except Exception:
         raise ValueError("File non leggibile: serve un Excel .xlsx scaricato da leghe.fantacalcio.it")
     title = str(df.iat[0, 0]).strip() if df.shape[0] and df.shape[1] else ""
-    if not title.lower().startswith("calendario "):
-        raise ValueError("Il file non sembra un 'Calendario' di leghe.fantacalcio.it (titolo mancante in A1)")
-    raw_name = title[len("calendario "):].strip().upper()
+    lineup_title = LINEUP_TITLE_RE.match(title)
+    if title.lower().startswith("calendario "):
+        raw_name = title[len("calendario "):].strip().upper()
+    elif lineup_title:
+        raw_name = lineup_title.group(1).strip().upper()
+    else:
+        raise ValueError("Il file non sembra un 'Calendario' o una 'Formazione' di leghe.fantacalcio.it (titolo mancante in A1)")
     comp_type = NAME_MAP.get(raw_name, raw_name)
     if comp_type not in KNOWN_TYPES:
         raise ValueError(f"Competizione '{raw_name}' non riconosciuta")
+    totals = parse_lineup_totals(df) if lineup_title else {}
+    if lineup_title and not totals:
+        raise ValueError("Nessuna squadra con un totale trovata nel file")
+
     comp = db.query(Competition).filter(Competition.season_id == season.id, Competition.type == comp_type).first()
     created = comp is None
     if created:
         # Come ensure_competitions: una competizione che compare a stagione in
-        # corso (es. UEFA a fine gironi) viene creata dal suo primo calendario.
+        # corso (es. UEFA a fine gironi) viene creata dal suo primo file.
         _ensure_league_and_competition(db, season, comp_type)
         comp = db.query(Competition).filter(Competition.season_id == season.id, Competition.type == comp_type).first()
 
     name_to_team = {
         _name_key(t.name): t for t in db.query(FantaTeam).filter(FantaTeam.season_id == season.id)
     }
-    result = _import_calendar(db, comp, comp_type, excel_bytes, name_to_team)
+    matched_ids: set[int] = set()
+    if lineup_title:
+        league_day = int(lineup_title.group(2))
+        result = _import_lineups(db, season, comp, comp_type, league_day, totals, name_to_team, matched_ids)
+        key = f"{comp_type} · giornata {league_day}"
+    else:
+        result = _import_calendar(db, comp, comp_type, excel_bytes, name_to_team, matched_ids)
+        key = comp_type
     result["appena_creata"] = created
-    return {comp_type: result}
+    if result["teams_unmatched"]:
+        result["rename_candidates"] = _rename_candidates(db, season, comp_type, matched_ids)
+    return {key: result}
 
 
 def sync_results(db: Session, season: Season, comp_types: list[str] | None = None) -> dict:

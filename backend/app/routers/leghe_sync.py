@@ -8,7 +8,7 @@ import logging
 
 import requests
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.season import Season
@@ -17,7 +17,7 @@ from app.models.fanta_allenatore import FantaAllenatore
 from app.services.auth_service import require_admin
 from app.services.leghe_client import LegheClient
 from app.services.leghe_competition_sync import ensure_competitions
-from app.services.leghe_results_sync import import_calendar_file, sync_results
+from app.services.leghe_results_sync import _name_key, import_calendar_file, sync_results
 from app.services.leghe_lineup_scores_sync import sync_matchday_scores
 from app.services.competition_provisioning import MAIN_LEAGUE_TYPES, _ensure_league_and_competition
 
@@ -347,6 +347,43 @@ def import_leghe_calendar_file(
         return import_calendar_file(db, season, content)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+class RenameTeamRequest(BaseModel):
+    season_id: int
+    team_id: int
+    new_name: str = Field(min_length=1, max_length=150)
+
+
+@router.post("/rename-team")
+def rename_team_from_import(
+    data: RenameTeamRequest, db: Session = Depends(get_db), _admin: str = Depends(require_admin)
+):
+    """Aggiorna il nome di una squadra della stagione corrente, su conferma
+    dell'admin dopo un import che l'ha trovata con un nome diverso. Cambia solo
+    il nome: lo storico delle stagioni passate non viene toccato."""
+    season = db.query(Season).filter(Season.id == data.season_id).first()
+    if not season:
+        raise HTTPException(404, "Stagione non trovata")
+    if not season.is_current:
+        raise HTTPException(400, "La rinomina da import e' consentita solo nella stagione corrente")
+    team = db.query(FantaTeam).filter(FantaTeam.id == data.team_id, FantaTeam.season_id == season.id).first()
+    if not team:
+        raise HTTPException(404, "Squadra non trovata in questa stagione")
+    new_name = data.new_name.strip()
+    if not new_name:
+        raise HTTPException(400, "Nome vuoto")
+    clash = next(
+        (t for t in db.query(FantaTeam).filter(FantaTeam.season_id == season.id, FantaTeam.id != team.id)
+         if _name_key(t.name) == _name_key(new_name)),
+        None,
+    )
+    if clash:
+        raise HTTPException(409, f"Esiste gia' una squadra '{clash.name}' in questa stagione")
+    old_name, team.name = team.name, new_name
+    db.commit()
+    logger.info("Squadra %s rinominata da import: '%s' -> '%s'", team.id, old_name, new_name)
+    return {"team_id": team.id, "old_name": old_name, "new_name": new_name}
 
 
 @router.post("/sync-matchday-scores")
