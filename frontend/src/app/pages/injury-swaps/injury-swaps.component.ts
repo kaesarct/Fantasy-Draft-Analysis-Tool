@@ -94,6 +94,10 @@ import { AuthService } from '../../core/services/auth.service';
         <p class="text-muted" style="font-size:12px">
           {{ selTeam?.team_name }} — quotazione massima: {{ selInjury?.current_price }}
         </p>
+        <label class="exception-row">
+          <input type="checkbox" [(ngModel)]="allowHigher" (ngModelChange)="onSearchChange(searchTerm)" />
+          Eccezione: consenti un sostituto con quotazione maggiore
+        </label>
         <input pInputText class="search-input" [(ngModel)]="searchTerm"
                (ngModelChange)="onSearchChange($event)" placeholder="Cerca sostituto..." autocomplete="off" />
         @if (searching()) {
@@ -103,6 +107,7 @@ import { AuthService } from '../../core/services/auth.service';
             @for (p of results(); track p.id) {
               <button class="player-result" [disabled]="saving()" (click)="confirmSwap(p)">
                 {{ p.name }} <span class="text-muted">({{ p.role }}) · {{ p.price }}</span>
+                @if (p.price > selInjury?.current_price) { <span class="over-max">⚠ sopra il massimo</span> }
               </button>
             }
             @if (searchTerm.trim().length >= 2 && results().length === 0) {
@@ -132,6 +137,8 @@ import { AuthService } from '../../core/services/auth.service';
     .btn-danger { background: rgba(248,81,73,.12); color: var(--accent-red); border-color: rgba(248,81,73,.3); }
     .empty-state { text-align: center; padding: 48px; color: var(--text-muted); }
     .search-input { width: 100%; margin-bottom: 12px; }
+    .exception-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 10px; cursor: pointer; }
+    .over-max { color: var(--accent-orange); font-size: 11px; font-weight: 700; margin-left: 6px; }
     .search-results { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
     .player-result { text-align: left; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-elevated); cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-primary); }
     .player-result:hover:not(:disabled) { border-color: var(--accent-blue); }
@@ -148,6 +155,7 @@ export class InjurySwapsComponent implements OnInit {
   selInjury: any = null;
   selTeam: any = null;
   searchTerm = '';
+  allowHigher = false;
   results = signal<any[]>([]);
   searching = signal(false);
   saving = signal(false);
@@ -209,6 +217,7 @@ export class InjurySwapsComponent implements OnInit {
 
   resetDialog() {
     this.searchTerm = '';
+    this.allowHigher = false;
     this.results.set([]);
     this.searching.set(false);
     clearTimeout(this.searchTimeout);
@@ -219,7 +228,7 @@ export class InjurySwapsComponent implements OnInit {
     if (term.trim().length < 2) { this.results.set([]); this.searching.set(false); return; }
     this.searching.set(true);
     this.searchTimeout = setTimeout(() => {
-      this.api.getInjurySwapCandidates(this.selInjury.injury_id, this.selTeam.team_id, term.trim()).subscribe({
+      this.api.getInjurySwapCandidates(this.selInjury.injury_id, this.selTeam.team_id, term.trim(), this.allowHigher).subscribe({
         next: r => { this.results.set(r); this.searching.set(false); },
         error: () => this.searching.set(false),
       });
@@ -232,11 +241,15 @@ export class InjurySwapsComponent implements OnInit {
       injury_id: this.selInjury.injury_id,
       team_id: this.selTeam.team_id,
       replacement_player_id: player.id,
+      allow_higher_price: this.allowHigher,
     }).subscribe({
       next: res => {
         this.saving.set(false);
         this.dialogVisible = false;
         this.toast.add({ severity: 'success', summary: 'Cambio registrato', detail: `${this.selTeam.team_name}: ${player.name} (${res.swaps_used}/${this.maxSwaps()})` });
+        if (res.price_warning) {
+          this.toast.add({ severity: 'warn', summary: 'Attenzione', detail: res.price_warning });
+        }
         this.load();
       },
       error: err => {

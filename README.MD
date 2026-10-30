@@ -19,6 +19,7 @@ La **Fantacalcio Platform** è una moderna applicazione web full-stack progettat
 
 ## 🚀 Funzionalità Principali
 
+- **Infortuni scambiati**: il cambio ammette solo sostituti con quotazione ≤ a quella dell'infortunato; nel dialogo "Registra cambio" una spunta "Eccezione" consente un sostituto più caro (es. la quotazione dell'infortunato è scesa prima della registrazione) e lo segnala con "⚠ sopra il massimo". Se fantacalcio.it non risponde per aggiornare le quotazioni, il cambio si registra comunque con quelle salvate e compare un avviso.
 - **Dashboard completa**: Statistiche veloci, prossimi incontri di Serie A e stato infortuni.
 - **Statistiche Giocatori**: Dati anagrafici, ruolo, quotazioni, FVM (Fantavalore di Mercato) e tracking variazioni di prezzo.
 - **Gestione Squadre**: Dati fanta-team, loghi stagionali, crediti residui e allenatori multipli per squadra.

@@ -197,8 +197,9 @@ export class ApiService {
     return this.http.get(`${this.base}/injury-swaps`, { params: new HttpParams().set('season_id', seasonId) });
   }
 
-  getInjurySwapCandidates(injuryId: number, teamId: number, search: string): Observable<any[]> {
-    const params = new HttpParams().set('injury_id', injuryId).set('team_id', teamId).set('search', search);
+  getInjurySwapCandidates(injuryId: number, teamId: number, search: string, allowHigherPrice = false): Observable<any[]> {
+    const params = new HttpParams().set('injury_id', injuryId).set('team_id', teamId).set('search', search)
+      .set('allow_higher_price', allowHigherPrice);
     return this.http.get<any[]>(`${this.base}/injury-swaps/candidates`, { params });
   }
 
@@ -210,7 +211,7 @@ export class ApiService {
     return this.http.post(`${this.base}/injury-swaps/refresh-prices`, null, { params: new HttpParams().set('season_id', seasonId) });
   }
 
-  createInjurySwap(data: { injury_id: number; team_id: number; replacement_player_id: number }): Observable<any> {
+  createInjurySwap(data: { injury_id: number; team_id: number; replacement_player_id: number; allow_higher_price?: boolean }): Observable<any> {
     return this.http.post(`${this.base}/injury-swaps`, data);
   }
 

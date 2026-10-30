@@ -3,6 +3,7 @@ giocatore infortunato e con chi (record informativo, rose e crediti non
 vengono toccati). Regole: sostituto con quotazione attuale <= a quella
 dell'infortunato; massimo MAX_SWAPS_PER_TEAM cambi a stagione per squadra,
 anche se l'infortunato poi rientra."""
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +22,7 @@ from app.services.fanta_client import fanta_client
 from app.services.sync_service import sync_prices
 
 router = APIRouter(prefix="/injury-swaps", tags=["injury-swaps"])
+logger = logging.getLogger(__name__)
 
 MAX_SWAPS_PER_TEAM = 3
 MIN_WEEKS_BEFORE_SEASON_END = 8
@@ -191,6 +193,7 @@ def list_candidates(
     injury_id: int,
     team_id: int,
     search: str = "",
+    allow_higher_price: bool = False,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_admin),
 ):
@@ -225,7 +228,7 @@ def list_candidates(
     injured = db.query(InjuryPlayer.player_id).filter(
         InjuryPlayer.season_id == injury.season_id, InjuryPlayer.is_active == True
     )
-    rows = (
+    query = (
         db.query(Player, PlayerSnapshot.price)
         .join(latest, latest.c.player_id == Player.id)
         .join(
@@ -237,14 +240,13 @@ def list_candidates(
         .filter(
             Player.role == injury.player.role,
             Player.name.ilike(f"%{term}%"),
-            PlayerSnapshot.price <= snap.price,
             Player.id.notin_(taken),
             Player.id.notin_(injured),
         )
-        .order_by(Player.name)
-        .limit(30)
-        .all()
     )
+    if not allow_higher_price:
+        query = query.filter(PlayerSnapshot.price <= snap.price)
+    rows = query.order_by(Player.name).limit(30).all()
     return [{"id": p.id, "name": p.name, "role": p.role, "price": price} for p, price in rows]
 
 
@@ -252,6 +254,9 @@ class SwapCreate(BaseModel):
     injury_id: int
     team_id: int
     replacement_player_id: int
+    # Eccezione esplicita dell'admin: ammette un sostituto piu' caro (es. la
+    # quotazione dell'infortunato e' scesa prima che il cambio fosse registrato).
+    allow_higher_price: bool = False
 
 
 @router.post("")
@@ -260,6 +265,17 @@ def create_swap(data: SwapCreate, db: Session = Depends(get_db), _admin: str = D
     if not injury:
         raise HTTPException(404, "Infortunio non trovato")
     season_id = injury.season_id
+
+    # Aggiornamento quotazioni best-effort: se fantacalcio.it non risponde il
+    # cambio si registra comunque con le quotazioni salvate (l'admin conosce i
+    # prezzi), segnalandolo nella risposta.
+    price_warning = None
+    try:
+        _ensure_fresh_prices(db, season_id)
+    except Exception as e:
+        db.rollback()
+        logger.warning("Aggiornamento quotazioni fallito, uso quelle salvate: %s", e)
+        price_warning = "Quotazioni non aggiornate (fantacalcio.it non raggiungibile): usate quelle salvate."
 
     # Lock sulla squadra: serializza i cambi concorrenti cosi' il tetto non
     # si supera con due richieste simultanee.
@@ -294,16 +310,20 @@ def create_swap(data: SwapCreate, db: Session = Depends(get_db), _admin: str = D
     if repl.role != injury.player.role:
         raise HTTPException(400, f"Il sostituto deve avere lo stesso ruolo dell'infortunato ({injury.player.role})")
 
-    _ensure_fresh_prices(db, season_id)
-
     injured_snap = _latest_snapshot(db, injury.player_id, season_id)
     repl_snap = _latest_snapshot(db, repl.id, season_id)
     if not injured_snap or not repl_snap:
         raise HTTPException(400, "Quotazione attuale non disponibile")
     if repl_snap.price > injured_snap.price:
-        raise HTTPException(
-            400,
-            f"Il sostituto costa {repl_snap.price:g}, piu' dell'infortunato ({injured_snap.price:g})",
+        if not data.allow_higher_price:
+            raise HTTPException(
+                400,
+                f"Il sostituto costa {repl_snap.price:g}, piu' dell'infortunato ({injured_snap.price:g}): "
+                "spunta l'eccezione per registrarlo comunque",
+            )
+        logger.info(
+            "Cambio con sostituto piu' caro (eccezione admin): injury=%s team=%s sostituto=%s (%g > %g)",
+            injury.id, team.id, repl.id, repl_snap.price, injured_snap.price,
         )
 
     in_league = (
@@ -336,7 +356,10 @@ def create_swap(data: SwapCreate, db: Session = Depends(get_db), _admin: str = D
     db.add(sub)
     db.commit()
     db.refresh(sub)
-    return {**_swap_payload(sub), "swaps_used": used + 1, "warning": _season_end_warning(db, season_id)}
+    return {
+        **_swap_payload(sub), "swaps_used": used + 1,
+        "warning": _season_end_warning(db, season_id), "price_warning": price_warning,
+    }
 
 
 @router.delete("/{swap_id}")
