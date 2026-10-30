@@ -8,6 +8,7 @@ from app.models.competition import Competition, CompetitionMatchdayScore, Compet
 from app.models.fanta_team import FantaTeam, League, FantaTeamLineage, FantaTeamCoach
 from app.models.injury import InjuryPlayer, InjuryArchive
 from app.services.auth_service import require_admin
+from app.services.matchdays import serie_a_days
 from app.services.season_import import import_season_data, import_season_votes
 from app.services.competition_provisioning import MAIN_LEAGUE_TYPES, _ensure_league_and_competition  # noqa: F401 (re-esportati per gli altri router)
 from app.routers.injuries import build_injuries_csv
@@ -233,10 +234,23 @@ def _live_standings(db: Session, comp: Competition) -> list[dict]:
             )
         ]
         if main_comp_ids:
+            # I punteggi sincronizzati sono sulla giornata di Serie A, i risultati su quella
+            # di lega: li porto sulla stessa chiave, altrimenti lo stesso turno conta due volte.
+            to_serie_a_day = {cid: serie_a_days(db, cid) for cid in main_comp_ids}
+            synced_scores = {(team_id, score) for (team_id, _), score in by_day.items()}
             for m in db.query(MatchResult).filter(MatchResult.competition_id.in_(main_comp_ids)):
+                day = to_serie_a_day[m.competition_id].get(m.match_day)
                 for team_id, score in ((m.fanta_team_home_id, m.score_home), (m.fanta_team_away_id, m.score_away)):
-                    if score is not None:
+                    if score is None:
+                        continue
+                    if day is None:
+                        # Calendario non ancora caricato: non so a quale giornata di Serie A
+                        # corrisponde, quindi scarto il turno se e' gia' tra i punteggi sincronizzati.
+                        if (team_id, score) in synced_scores:
+                            continue
                         by_day.setdefault((team_id, m.match_day), score)
+                    else:
+                        by_day.setdefault((team_id, day), score)
         team_ids = {team_id for team_id, _ in by_day} - rows.keys()
         if team_ids:
             for team in db.query(FantaTeam).filter(FantaTeam.id.in_(team_ids)):

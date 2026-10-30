@@ -32,14 +32,25 @@ def create_dump() -> bytes:
     return result.stdout
 
 
+# --clean elimina solo gli oggetti presenti nel dump: una tabella che esiste solo
+# in questo ambiente (es. nuova nel codice, assente nel dump di prod) con una chiave
+# esterna verso una tabella del dump ne impedirebbe il ricaricamento. Si azzera quindi
+# lo schema; --single-transaction fa si' che, se il caricamento fallisce, il DB resti
+# com'era invece di restare a meta'.
+_RESET_SCHEMA = b"DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"
+
+
 def restore_dump(sql_bytes: bytes) -> None:
     result = subprocess.run(
         [
             "psql", "-h", settings.db_host, "-p", str(settings.db_port),
             "-U", settings.db_user, "-d", settings.db_name,
-            "--set", "ON_ERROR_STOP=1",
+            "--set", "ON_ERROR_STOP=1", "--single-transaction",
         ],
-        input=sql_bytes, env=_pg_env(), capture_output=True, timeout=300,
+        input=_RESET_SCHEMA + sql_bytes,
+        # senza le NOTICE del DROP ... CASCADE la prima riga dell'errore e' la causa vera
+        env={**_pg_env(), "PGOPTIONS": "-c client_min_messages=warning"},
+        capture_output=True, timeout=300,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Restore fallito: {result.stderr.decode('utf-8', errors='replace')}")

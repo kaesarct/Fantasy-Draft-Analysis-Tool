@@ -7,6 +7,7 @@ from app.models.competition import Competition, CompetitionMatchdayScore, Compet
 from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
 from app.services.competition_provisioning import MAIN_LEAGUE_TYPES
+from app.services.matchdays import serie_a_days
 
 router = APIRouter(tags=["awards"])
 
@@ -32,14 +33,19 @@ def _round_label(phase, match_day: int) -> str:
     return label if label else f"{match_day}ª giornata"
 
 
-def _matchday_scores_from_lineup_sync(db: Session, comp: Competition, comp_type: str) -> list[dict]:
+def _matchday_scores_from_lineup_sync(
+    db: Session, comp: Competition, comp_type: str, to_league_day: dict[int, int]
+) -> list[dict]:
     """Punteggio reale di giornata, da CompetitionMatchdayScore (sincronizzato
     da leghe.fantacalcio.it via teamLineup — vedi POST /leghe-sync/sync-matchday-scores).
     Fonte preferita: funziona anche per competizioni senza scontri diretti
     (es. Silver), ma non porta l'informazione di fase — per le coppe mostra
     sempre "Nª giornata" invece di "semifinale" ecc. (quella richiede anche
     un MatchResult sincronizzato dall'Excel Calendario per la stessa
-    competizione)."""
+    competizione).
+
+    I punteggi sono salvati sulla giornata di Serie A; l'etichetta usa la
+    giornata di lega (come i MatchResult) quando il Calendario la conosce."""
     rows = (
         db.query(CompetitionMatchdayScore, FantaTeam.name)
         .join(FantaTeam, FantaTeam.id == CompetitionMatchdayScore.fanta_team_id)
@@ -49,15 +55,18 @@ def _matchday_scores_from_lineup_sync(db: Session, comp: Competition, comp_type:
     return [
         {
             "fanta_team_id": s.fanta_team_id, "fanta_team_name": team_name,
-            "competition_type": comp_type, "match_day": s.match_day,
-            "round_label": _round_label(None, s.match_day),
+            "competition_type": comp_type, "serie_a_day": s.match_day,
+            "match_day": to_league_day.get(s.match_day, s.match_day),
+            "round_label": _round_label(None, to_league_day.get(s.match_day, s.match_day)),
             "score": s.score,
         }
         for s, team_name in rows
     ]
 
 
-def _matchday_scores_from_match_results(db: Session, comp: Competition, comp_type: str) -> list[dict]:
+def _matchday_scores_from_match_results(
+    db: Session, comp: Competition, comp_type: str, to_serie_a_day: dict[int, int]
+) -> list[dict]:
     """Punteggio reale di singola partita, da MatchResult (sincronizzato da
     leghe.fantacalcio.it — vedi POST /leghe-sync/sync-results)."""
     matches = db.query(MatchResult).filter(MatchResult.competition_id == comp.id).all()
@@ -73,6 +82,7 @@ def _matchday_scores_from_match_results(db: Session, comp: Competition, comp_typ
             performances.append({
                 "fanta_team_id": team_id, "fanta_team_name": names.get(team_id, "?"),
                 "competition_type": comp_type, "match_day": m.match_day, "round_label": round_label,
+                "serie_a_day": to_serie_a_day.get(m.match_day),
                 "score": score,
             })
     return performances
@@ -111,24 +121,42 @@ def _matchday_scores_from_standings(db: Session, comp: Competition, comp_type: s
     return performances
 
 
+def _merge_lineup_and_results(from_lineup: list[dict], from_results: list[dict]) -> list[dict]:
+    """Unisce le due fonti senza contare due volte lo stesso turno: i punteggi
+    da formazione hanno la precedenza, i risultati aggiungono i turni che le
+    formazioni non coprono. Il turno e' lo stesso se coincide la giornata di
+    Serie A; senza corrispondenza nel Calendario ripiego sul punteggio uguale."""
+    covered_days = {(p["fanta_team_id"], p["serie_a_day"]) for p in from_lineup}
+    covered_scores = {(p["fanta_team_id"], p["score"]) for p in from_lineup}
+    def already_covered(p: dict) -> bool:
+        if p["serie_a_day"] is not None:
+            return (p["fanta_team_id"], p["serie_a_day"]) in covered_days
+        return (p["fanta_team_id"], p["score"]) in covered_scores
+
+    return from_lineup + [p for p in from_results if not already_covered(p)]
+
+
 def _matchday_scores(db: Session, season_id: int, comp_types: list[str]) -> list[dict]:
     """Punteggio di ogni squadra per singola giornata/partita, per tutte le
-    competizioni della stagione tra quelle passate. Prova le fonti in ordine
-    di affidabilita': CompetitionMatchdayScore (teamLineup, universale) ->
-    MatchResult (Excel Calendario, porta anche la fase per le coppe) ->
-    ripiego a classifica cumulativa — cosi' una competizione senza ancora
-    nessun dato sincronizzato non sparisce dal conteggio."""
+    competizioni della stagione tra quelle passate. Fonti: CompetitionMatchdayScore
+    (formazioni/teamLineup, universale) e MatchResult (Excel Calendario, porta
+    anche la fase per le coppe), unite turno per turno; se non c'e' nessuna delle
+    due, ripiego a classifica cumulativa — cosi' una competizione senza ancora
+    nessun dato non sparisce dal conteggio."""
     performances = []
     for comp in db.query(Competition).filter(
         Competition.season_id == season_id, Competition.type.in_(comp_types)
     ):
         comp_type = comp.type.value if hasattr(comp.type, "value") else comp.type
-        from_lineup = _matchday_scores_from_lineup_sync(db, comp, comp_type)
-        if from_lineup:
-            performances.extend(from_lineup)
-            continue
-        from_results = _matchday_scores_from_match_results(db, comp, comp_type)
-        performances.extend(from_results if from_results else _matchday_scores_from_standings(db, comp, comp_type))
+        to_serie_a_day = serie_a_days(db, comp.id)
+        from_lineup = _matchday_scores_from_lineup_sync(
+            db, comp, comp_type, {v: k for k, v in to_serie_a_day.items()}
+        )
+        from_results = _matchday_scores_from_match_results(db, comp, comp_type, to_serie_a_day)
+        merged = _merge_lineup_and_results(from_lineup, from_results)
+        performances.extend(merged if merged else _matchday_scores_from_standings(db, comp, comp_type))
+    for p in performances:
+        p.pop("serie_a_day", None)
     return _drop_cup_duplicates(performances)
 
 

@@ -5,6 +5,7 @@ Protetto dal login admin (require_admin) piu' una password dedicata
 personali reali (nomi/email allenatori) e il restore sovrascrive l'intero DB.
 """
 import io
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -12,10 +13,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.config import settings
+from app.database import init_db
 from app.services.auth_service import require_admin, verify_password
 from app.services.db_backup import create_dump, restore_dump
 
 router = APIRouter(prefix="/admin/db", tags=["admin-db"])
+logger = logging.getLogger(__name__)
 
 
 class DumpRequest(BaseModel):
@@ -49,5 +52,11 @@ async def restore_database(
         raise HTTPException(status_code=403, detail="Restore disabilitato in questo ambiente")
     _verify_ops_password(password)
     sql_bytes = await file.read()
-    restore_dump(sql_bytes)
+    try:
+        restore_dump(sql_bytes)
+    except RuntimeError as e:
+        logger.error("%s", e)
+        raise HTTPException(status_code=500, detail=str(e).splitlines()[0])
+    # Il dump puo' venire da una versione del codice con meno tabelle/colonne: le ricreo
+    init_db()
     return {"ok": True}
