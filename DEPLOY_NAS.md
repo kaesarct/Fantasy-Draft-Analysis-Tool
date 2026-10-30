@@ -231,6 +231,18 @@ docker compose -f docker-compose.prod.yml exec db \
   pg_dump -U ft_user ft_platform > backup_$(date +%Y%m%d).sql
 ```
 
+### Dopo un aggiornamento le pagine non si aprono ("Failed to load module script ... text/html")
+
+Ogni build dell'interfaccia genera file con il nome legato al contenuto (`chunk-XXXXXXXX.js`) e cancella
+quelli della versione precedente. Un browser con ancora aperta la pagina vecchia chiede file che non
+esistono più. Subito dopo un deploy basta ricaricare senza cache (Ctrl+Shift+R, o chiudere e riaprire la
+scheda). Da `nginx.conf` in poi `index.html` non viene mai tenuto in cache, quindi i browser prendono la
+versione nuova da soli, e un chunk mancante risponde 404 invece di una pagina HTML. Se il problema
+resta dopo un ricaricamento senza cache, apri l'indirizzo di un chunk dall'errore
+(es. `https://<dominio>/chunk-23GYK56B.js`): se mostra l'app invece di codice JavaScript, quel file non
+esiste nella build in esecuzione e il frontend non è stato ricostruito
+(`docker compose -f docker-compose.prod.yml up -d --build frontend`).
+
 ## 8. Deploy automatico su tag (opzionale)
 
 Invece di collegarti via SSH a ogni aggiornamento, puoi far controllare al NAS
