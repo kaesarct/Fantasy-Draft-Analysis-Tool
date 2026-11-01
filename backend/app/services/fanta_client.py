@@ -10,6 +10,16 @@ logger = logging.getLogger(__name__)
 
 URL_API = f"{settings.fanta_base_url}{settings.fanta_api}"
 
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/137.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
 
 class FantaClient:
     def __init__(self):
@@ -22,6 +32,7 @@ class FantaClient:
             "password": settings.fanta_password,
         }
         self._session = requests.Session()
+        self._session.headers.update(DEFAULT_HEADERS)
         try:
             resp = self._session.post(url, json=payload, timeout=15)
             # L'API risponde 200 anche a credenziali errate: fa fede il flag success.
@@ -44,7 +55,7 @@ class FantaClient:
     def get_last_matchday(self) -> int:
         url = f"{settings.fanta_base_url}live-serie-a"
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=15)
             resp.raise_for_status()
         except Exception as e:
             logger.error("get_last_matchday error: %s", e)

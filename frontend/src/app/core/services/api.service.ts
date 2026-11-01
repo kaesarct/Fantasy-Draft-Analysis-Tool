@@ -481,4 +481,16 @@ export class ApiService {
     formData.append('file', file);
     return this.http.post<any>(`${this.base}/admin/db/restore`, formData);
   }
+
+  // ── Live Silver (Pubblico) ───────────────────────────────────
+  getSilverLive(matchDay?: number | null, refresh = false): Observable<any> {
+    let params = new HttpParams();
+    if (matchDay !== undefined && matchDay !== null) {
+      params = params.set('match_day', matchDay);
+    }
+    if (refresh) {
+      params = params.set('refresh', 'true');
+    }
+    return this.http.get<any>(`${this.base}/live/silver`, { params });
+  }
 }

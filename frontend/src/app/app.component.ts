@@ -257,6 +257,7 @@ export class AppComponent implements OnInit {
   navItems: NavItem[] = [
     { label: 'Dashboard',   route: '/dashboard',  icon: '🏠' },
     { label: 'Classifica',  route: '/league',     icon: '🏆' },
+    { label: 'Live Silver', route: '/live',       icon: '⚡' },
     { label: 'Allenatori',  route: '/teams',      icon: '👤' },
     { label: 'Giocatori',   route: '/players',    icon: '⚽' },
     { label: 'Partite',     route: '/matches',    icon: '📅' },

@@ -48,6 +48,11 @@ export const routes: Routes = [
       import('./pages/matches/matches.component').then(m => m.MatchesComponent),
   },
   {
+    path: 'live',
+    loadComponent: () =>
+      import('./pages/live-silver/live-silver.component').then(m => m.LiveSilverComponent),
+  },
+  {
     path: 'injuries',
     loadComponent: () =>
       import('./pages/injuries/injuries.component').then(m => m.InjuriesComponent),

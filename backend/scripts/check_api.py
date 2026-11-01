@@ -19,7 +19,7 @@ import requests
 from app.config import settings
 from app.services import seriea_scraper
 from app.services.fanta_client import fanta_client
-from app.services.leghe_client import LegheClient
+from app.services.leghe_client import LegheClient, BROWSER_HEADERS
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 XLSX_MAGIC = b"PK\x03\x04"
@@ -67,7 +67,7 @@ def describe_excel(path: str | None) -> tuple[str, str]:
 
 # ── fantacalcio.it — pagine pubbliche ───────────────────────────────────────
 def check_base_url():
-    resp = requests.get(settings.fanta_base_url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+    resp = requests.get(settings.fanta_base_url, timeout=15, headers=BROWSER_HEADERS)
     status = OK if resp.ok else FAIL
     return status, f"HTTP {resp.status_code} ({len(resp.content)} byte)"
 
@@ -144,9 +144,9 @@ def check_excel_votes(tmpdir: str):
     return _check
 
 
-# ── leghe.fantacalcio.it ────────────────────────────────────────────────────
+# ── leghe.fantacalcio.it / apileague.fantacalcio.it ─────────────────────────
 def check_leghe_home():
-    resp = requests.get(settings.fanta_leghe_base_url, timeout=15)
+    resp = requests.get(settings.fanta_leghe_base_url, headers=BROWSER_HEADERS, timeout=15)
     if not resp.ok:
         return FAIL, f"HTTP {resp.status_code} su {settings.fanta_leghe_base_url}"
     return OK, f"HTTP {resp.status_code} ({len(resp.content)} byte)"
@@ -156,7 +156,7 @@ def check_app_key(state: dict):
     def _check():
         client = LegheClient()
         state["client"] = client
-        html = requests.get(settings.fanta_leghe_base_url, timeout=15).text
+        html = requests.get(settings.fanta_leghe_base_url, headers=BROWSER_HEADERS, timeout=15).text
         match = re.search(r'authAppKey"?\s*:\s*"([^"]+)"', html)
         if not match:
             return WARN, "authAppKey assente dalla homepage leghe: in uso il fallback di config.py"
@@ -197,32 +197,6 @@ def check_lega_alias(state: dict):
     return _check
 
 
-def check_session_file():
-    path = settings.fanta_session_file
-    if not os.path.exists(path):
-        return FAIL, f"{path} assente: esegui capture_login_session.py"
-    try:
-        with open(path, encoding="utf-8") as f:
-            state = json.load(f)
-    except json.JSONDecodeError as e:
-        return FAIL, f"{path} non e' JSON valido: {e}"
-
-    cookies = state.get("cookies") or []
-    if not cookies:
-        return FAIL, f"{path} senza cookie: sessione da rigenerare"
-
-    now = datetime.now(timezone.utc).timestamp()
-    expiries = [c["expires"] for c in cookies if c.get("expires", -1) > 0]
-    scaduti = [c["name"] for c in cookies if 0 < c.get("expires", -1) < now]
-    if scaduti:
-        return WARN, f"{len(cookies)} cookie, {len(scaduti)} gia' scaduti ({', '.join(scaduti[:3])})"
-    if expiries:
-        prossima = datetime.fromtimestamp(min(expiries), timezone.utc)
-        giorni = (min(expiries) - now) / 86400
-        return OK, f"{len(cookies)} cookie, prima scadenza {prossima:%Y-%m-%d} (tra {giorni:.0f} giorni)"
-    return OK, f"{len(cookies)} cookie di sola sessione (nessuna scadenza)"
-
-
 def check_competizioni(state: dict):
     def _check():
         client = state.get("client")
@@ -234,6 +208,24 @@ def check_competizioni(state: dict):
             return WARN, "0 competizioni create in lega per questa stagione"
         elenco = ", ".join(f"{c['name']}={c['id']}" for c in competizioni)
         return OK, f"{len(competizioni)} competizioni — {elenco}"
+
+    return _check
+
+
+def check_calendario(state: dict):
+    def _check():
+        competizioni = state.get("competizioni")
+        if not competizioni:
+            return WARN, "competizioni non disponibili: check calendario saltato"
+        client = state["client"]
+        comp = competizioni[0]
+        cal = client.get_competition_calendar(comp["id"])
+        cal_days = cal if isinstance(cal, list) else (cal.get("calendar") or [])
+        calculated = sum(1 for d in cal_days if d.get("calculated"))
+        return OK, (
+            f"'{comp['name']}' (id_comp={comp['id']}): {len(cal_days)} giornate in calendario "
+            f"({calculated} calcolate)"
+        )
 
     return _check
 
@@ -289,15 +281,15 @@ def main() -> int:
         run(f"GET api/v1/Excel/stats/{settings.fanta_year_quotazioni}/1", check_excel_stats(tmpdir))
         run(f"GET api/v1/Excel/votes/{settings.fanta_year_quotazioni}/<giornata>", check_excel_votes(tmpdir))
 
-    print("\n── leghe.fantacalcio.it ──────────────────────────────────────────")
+    print("\n── leghe.fantacalcio.it / apileague.fantacalcio.it ───────────────")
     state: dict = {}
     run("GET homepage leghe", check_leghe_home)
     run("discovery authAppKey", check_app_key(state))
     run("POST apileague/onboarding/v1/login", check_leghe_login(state))
     run("alias lega configurato", check_lega_alias(state))
     run("GET onboarding/v1/league/competitions", check_competizioni(state))
+    run("GET onboarding/v1/league/competition/calendar", check_calendario(state))
     run("GET gaming/v1/teamLineup", check_formazioni(state))
-    run(f"session file ({settings.fanta_session_file})", check_session_file)
 
     n_ok = sum(1 for _, s, _ in results if s == OK)
     n_warn = sum(1 for _, s, _ in results if s == WARN)

@@ -1,9 +1,9 @@
 """Import calendario/risultati da leghe.fantacalcio.it in MatchResult.
 
 Sostituisce, competizione per competizione, il ripiego di awards.py basato su
-CompetitionStanding con dati reali: stesso formato Excel gia' interpretato da
-etl/import_history.py per lo storico (regex duplicate qui, non importate — 4
-righe stabili, evita di far dipendere app/ da uno script one-off in etl/)."""
+CompetitionStanding con dati reali: legge in automatico il calendario REST da
+apileague.fantacalcio.it (onboarding/v1/league/competition/calendar/{id_comp})
+e supporta anche il caricamento manuale di file Excel."""
 import io
 import re
 import unicodedata
@@ -272,6 +272,159 @@ def _import_calendar(
     }
 
 
+def _infer_cup_phase(n_matches: int, comp_type: str) -> CompetitionPhase:
+    """Determina la fase di un turno di coppa dal numero di partite nel turno."""
+    if comp_type in {"CIEMPIONS", "UEFA"} and n_matches >= 6:
+        return CompetitionPhase.GROUP
+    if n_matches >= 8:
+        return CompetitionPhase.ROUND_OF_16
+    if n_matches >= 4:
+        return CompetitionPhase.QUARTER_FINAL
+    if n_matches >= 2:
+        return CompetitionPhase.SEMI_FINAL
+    return CompetitionPhase.FINAL
+
+
+def _groups_from_calendar_api(
+    calendar_data: list[dict], comp_type: str, teams_by_leghe_id: dict[int, str], our_teams: dict[int, FantaTeam]
+) -> dict[str, set[str]]:
+    """Ricava i gironi dalle partite della fase a gironi del calendario REST
+    (componenti connesse degli scontri, inclusi i turni futuri non ancora giocati)."""
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for day in calendar_data:
+        matches = day.get("matches") or []
+        if _infer_cup_phase(len(matches), comp_type) != CompetitionPhase.GROUP:
+            continue
+        for m in matches:
+            h_id, a_id = m.get("tIdH"), m.get("tIdA")
+            if h_id and a_id:
+                parent[find(int(h_id))] = find(int(a_id))
+
+    components: dict[int, set[int]] = {}
+    for tid in list(parent):
+        components.setdefault(find(tid), set()).add(tid)
+
+    ordered = sorted(components.values(), key=lambda ids: min(ids))
+    groups: dict[str, set[str]] = {}
+    for i, tids in enumerate(ordered):
+        if len(tids) < 3:
+            continue
+        letter = chr(ord("A") + i) if i < 26 else str(i + 1)
+        names: set[str] = set()
+        for tid in tids:
+            if tid in our_teams:
+                names.add(our_teams[tid].name)
+            elif tid in teams_by_leghe_id:
+                names.add(teams_by_leghe_id[tid])
+        if names:
+            groups[letter] = names
+    return groups
+
+
+def _import_calendar_from_api(
+    db: Session,
+    comp: Competition,
+    comp_type: str,
+    calendar_data: list[dict],
+    our_teams: dict[int, FantaTeam],
+    teams_by_leghe_id: dict[int, str],
+    name_to_team: dict[str, FantaTeam],
+) -> dict:
+    """Importa partite, giornate di Serie A e gironi direttamente dalla risposta JSON di
+    GET onboarding/v1/league/competition/calendar/{id_comp} su apileague.fantacalcio.it."""
+    is_cup = comp_type not in {"GOLD", "BRONZE", "CARBON", "SILVER"}
+    if is_cup:
+        groups = _groups_from_calendar_api(calendar_data, comp_type, teams_by_leghe_id, our_teams)
+        if groups:
+            _sync_groups(db, comp, groups, name_to_team)
+
+    imported = updated = 0
+    unmatched: set[str] = set()
+    serie_a_days: dict[int, int] = {}
+
+    for day in calendar_data:
+        match_day = int(day.get("matchDay", 0))
+        serie_a_day = day.get("championshipMatchDay")
+        if match_day and serie_a_day is not None:
+            serie_a_days[match_day] = int(serie_a_day)
+
+        matches = day.get("matches") or []
+        phase = _infer_cup_phase(len(matches), comp_type) if is_cup else CompetitionPhase.REGULAR
+
+        for m in matches:
+            h_id = m.get("tIdH")
+            a_id = m.get("tIdA")
+            if not h_id or not a_id:
+                continue
+
+            res_str = str(m.get("result") or "").strip()
+            goals_match = GOALS_RE.match(res_str)
+            if not goals_match:
+                continue
+
+            home_team = our_teams.get(int(h_id))
+            if not home_team and int(h_id) in teams_by_leghe_id:
+                home_team = name_to_team.get(_name_key(teams_by_leghe_id[int(h_id)]))
+            away_team = our_teams.get(int(a_id))
+            if not away_team and int(a_id) in teams_by_leghe_id:
+                away_team = name_to_team.get(_name_key(teams_by_leghe_id[int(a_id)]))
+
+            if not home_team:
+                unmatched.add(teams_by_leghe_id.get(int(h_id), f"ID:{h_id}"))
+            if not away_team:
+                unmatched.add(teams_by_leghe_id.get(int(a_id), f"ID:{a_id}"))
+            if not home_team or not away_team:
+                continue
+
+            pt_h = m.get("ptH")
+            pt_a = m.get("ptA")
+            score_home = float(pt_h) if pt_h is not None else None
+            score_away = float(pt_a) if pt_a is not None else None
+            goals_home = int(goals_match.group(1))
+            goals_away = int(goals_match.group(2))
+            pts_home = int(m.get("standingPtH") or 0)
+            pts_away = int(m.get("standingPtA") or 0)
+
+            existing = db.query(MatchResult).filter(
+                MatchResult.competition_id == comp.id,
+                MatchResult.match_day == match_day,
+                MatchResult.fanta_team_home_id == home_team.id,
+                MatchResult.fanta_team_away_id == away_team.id,
+            ).first()
+            values = dict(
+                score_home=score_home, score_away=score_away,
+                goals_home=goals_home, goals_away=goals_away,
+                pts_home=pts_home, pts_away=pts_away,
+                phase=phase,
+            )
+            if existing:
+                for k, v in values.items():
+                    setattr(existing, k, v)
+                updated += 1
+            else:
+                db.add(MatchResult(
+                    competition_id=comp.id, match_day=match_day,
+                    fanta_team_home_id=home_team.id, fanta_team_away_id=away_team.id,
+                    **values,
+                ))
+                imported += 1
+
+    _save_matchdays(db, comp, serie_a_days)
+    db.commit()
+    return {
+        "matches_imported": imported, "matches_updated": updated,
+        "serie_a_days": len(serie_a_days), "teams_unmatched": sorted(unmatched),
+    }
+
+
 def parse_lineup_totals(df) -> dict[str, float]:
     """Totale di giornata di ogni squadra in un Excel 'Formazioni': nome della
     squadra sopra la cella 'Modulo', con 'Totale' e il valore sulla stessa riga.
@@ -428,9 +581,8 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
         Competition.season_id == season.id,
         Competition.leghe_id.isnot(None),
         # Silver non ha mai un calendario testa a testa da scaricare (e' una
-        # classifica ad accumulo che rispecchia il campionato di appartenenza,
-        # verificato dal vivo: l'export ritorna "File non disponibile" come
-        # per Tenkaichi) — e non serve comunque al calcolo Goku/Oscar.
+        # classifica ad accumulo che rispecchia il campionato di appartenenza)
+        # — e non serve comunque al calcolo Goku/Oscar.
         Competition.type != "SILVER",
     )
     if comp_types:
@@ -454,9 +606,15 @@ def sync_results(db: Session, season: Season, comp_types: list[str] | None = Non
             for team in our_teams.values():
                 name_to_team.setdefault(_name_key(team.name), team)
 
-            report[comp_type] = _import_calendar(
-                db, comp, comp_type, client.download_results_excel(comp.leghe_id, comp_type), name_to_team
-            )
+            calendar_data = client.get_competition_calendar(comp.leghe_id)
+            if calendar_data:
+                report[comp_type] = _import_calendar_from_api(
+                    db, comp, comp_type, calendar_data, our_teams, teams_by_leghe_id, name_to_team
+                )
+            else:
+                report[comp_type] = _import_calendar(
+                    db, comp, comp_type, client.download_results_excel(comp.leghe_id, comp_type), name_to_team
+                )
             report[comp_type]["appena_creata"] = comp_type in newly_created
         except Exception as e:
             db.rollback()
