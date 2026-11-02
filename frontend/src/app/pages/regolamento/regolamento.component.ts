@@ -6,10 +6,10 @@ import { Component } from '@angular/core';
   template: `
     <div class="page-container fade-up">
       <div class="page-header">
-        <h1 class="page-title">📜 Regolamento Tamarros 2026</h1>
-        <a class="download-link" href="regolamento-tamarros-2026.pdf" download>⬇️ Scarica il PDF</a>
+        <h1 class="page-title">📜 Regolamento Tamarros</h1>
+        <a class="download-link" href="regolamento-tamarros.pdf" download>⬇️ Scarica il PDF</a>
       </div>
-      <iframe class="pdf-frame" src="regolamento-tamarros-2026.pdf" title="Regolamento Tamarros 2026"></iframe>
+      <iframe class="pdf-frame" src="regolamento-tamarros.pdf" title="Regolamento Tamarros 2026"></iframe>
     </div>
   `,
   styles: [`

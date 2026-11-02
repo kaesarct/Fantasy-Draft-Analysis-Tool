@@ -307,7 +307,7 @@ import { ApiService } from '../../core/services/api.service';
                               </div>
                               <div class="summary-box">
                                 <div class="summary-box-title">
-                                  🔄 Sostituzioni ({{ team.substitutions?.length || 0 }}/{{ d.league_rules?.max_substitutions || 5 }})
+                                  🔄 Sostituzioni ({{ team.substitutions?.length || 0 }}/{{ d.league_rules?.max_substitutions || 3 }})
                                 </div>
                                 @if (team.substitutions?.length) {
                                   <div class="subs-list">

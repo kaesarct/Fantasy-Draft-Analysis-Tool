@@ -31,6 +31,18 @@ import { AuthService } from '../../core/services/auth.service';
         </div>
       </div>
 
+      <!-- Locandina della stagione (file in frontend/public: se manca la scheda non compare) -->
+      @if (!posterMissing()) {
+        <div class="poster-card card mb-4">
+          <img
+            class="poster-img"
+            src="/stagione.jpg"
+            alt="Fantacalcio Tamarros"
+            (error)="posterMissing.set(true)"
+          />
+        </div>
+      }
+
       <!-- Quick stats -->
       <div class="stats-grid mb-4">
         @for (stat of quickStats(); track stat.label) {
@@ -140,6 +152,9 @@ import { AuthService } from '../../core/services/auth.service';
     }
     .btn-outline:hover { border-color: var(--accent-blue); }
 
+    .poster-card { padding: 0; overflow: hidden; }
+    .poster-img { display: block; width: 100%; height: auto; }
+
     .sync-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; }
     .sync-msg { font-size: 13px; }
     .sync-msg.error { color: var(--text-negative, #e05260); }
@@ -180,6 +195,7 @@ export class DashboardComponent implements OnInit {
   matches = signal<any[]>([]);
   injuries = signal<any[]>([]);
   loadingMatches = signal(true);
+  posterMissing = signal(false);
   currentSeasonId = signal<number | null>(null);
   syncingPrices = signal(false);
   syncingVotes = signal(false);

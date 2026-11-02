@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 
 FANTA_BASE = "https://www.fantacalcio.it/"
 
+# Regolamento Tamarros: al massimo 3 sostituzioni, solo sullo stesso ruolo; senza
+# sostituto che prende voto si prende 4 d'ufficio (se restano sostituzioni libere), se no 0.
+MAX_SUBSTITUTIONS = 3
+OFFICE_VOTE = 4.0
+
 MATCH_EVENT_INFO = {
     1: {"name": "Ammonizione", "symbol": "🟨", "pts": -0.5},
     2: {"name": "Espulsione", "symbol": "🟥", "pts": -1.0},
@@ -559,268 +564,155 @@ def calculate_player_fanta_vote(
     return calc_fv, symbols
 
 
+def _substitution_record(out_name: str, out_role: str, entry: dict) -> dict:
+    return {
+        "out_name": out_name,
+        "in_name": entry["name"],
+        "role": out_role,
+        "out_role": out_role,
+        "in_role": entry.get("in_role", out_role),
+        "vote": entry["vote"],
+        "fanta_vote": entry["fanta_vote"],
+        "is_base_vote": entry.get("is_base_vote", False),
+        "events_formatted": entry.get("events_formatted", ""),
+    }
+
+
 def calculate_substitutions(
     starts: list[dict],
     bench: list[dict],
     master_players: dict[int, dict],
     live_votes: dict[int, dict],
     teams_status: dict[str, int],
-    subst_settings: dict | None,
     league_settings: dict | None = None,
     initial_module: str = "",
 ) -> tuple[list[dict], list[dict], str]:
-    """Simula le sostituzioni per i titolari la cui squadra ha già concluso la partita
-    e non hanno ricevuto voto (o sono S.V.)."""
-    max_subs = (subst_settings or {}).get("ssnum", 5)
-    default_reserves_enabled = bool((subst_settings or {}).get("ssdft", False))
-    max_default_reserves = int((subst_settings or {}).get("ssdfn", 1))
-    default_reserves_used = 0
+    """Sostituzioni secondo il regolamento Tamarros, indipendenti dalle impostazioni di leghe:
+    al massimo MAX_SUBSTITUTIONS, solo sullo stesso ruolo (nessun cambio modulo) e con i
+    sostituti in ordine di panchina. Chi non gioca e non ha un sostituto che prende voto
+    prende OFFICE_VOTE d'ufficio se restano sostituzioni libere (quelle vere hanno la
+    priorita'), altrimenti 0."""
 
-    sstype = int((subst_settings or {}).get("sstype", 1))
-    lineup_conf = (league_settings or {}).get("lineup") or {}
-    allowed_mods = set(lineup_conf.get("mods") or ["343", "352", "433", "442", "451", "532", "541"])
-
-    current_counts = {"P": 0, "D": 0, "C": 0, "A": 0}
-    for s in starts:
-        pid = s.get("pid")
-        m = master_players.get(pid, {})
-        r = m.get("role") or s.get("r") or "?"
-        if r in current_counts:
-            current_counts[r] += 1
-
-    if not initial_module:
-        initial_module = f"{current_counts['D']}{current_counts['C']}{current_counts['A']}"
-    current_module = str(initial_module)
-
-    field_players: list[dict] = []
-    substitutions_done: list[dict] = []
-    used_bench_pids: set[int] = set()
-
-    for s in starts:
-        pid = s.get("pid")
+    def describe(entry: dict) -> dict:
+        pid = entry.get("pid")
         master = master_players.get(pid, {})
         live = live_votes.get(pid, {})
-        name = master.get("name") or live.get("name") or s.get("pn") or f"ID:{pid}"
-        role = master.get("role") or live.get("role") or s.get("r") or "?"
-        club = master.get("club", "-")
-        tname = master.get("tname", "").upper()
+        return {
+            "pid": pid,
+            "live": live,
+            "name": master.get("name") or live.get("name") or entry.get("pn") or f"ID:{pid}",
+            "role": master.get("role") or live.get("role") or entry.get("r") or "?",
+            "club": master.get("club", "-"),
+            "match_status": teams_status.get(master.get("tname", "").upper(), None),
+        }
 
-        raw_vote = live.get("vote")
-        has_valid_vote = raw_vote is not None and 0 < raw_vote <= 10
-        match_status = teams_status.get(tname, None)
-        is_match_finished = match_status == 4
+    def has_vote(live: dict) -> bool:
+        vote = live.get("vote")
+        return vote is not None and 0 < vote <= 10
 
-        if has_valid_vote:
-            calc_fv, symbols = calculate_player_fanta_vote(
-                pure_vote=raw_vote,
-                role=role,
-                events_dict=live.get("events_dict"),
-                league_settings=league_settings,
-                fallback_fv=live.get("fanta_vote"),
-            )
-            fv = calc_fv if calc_fv is not None else (live.get("fanta_vote") or raw_vote)
-            ev_str = " ".join(symbols) if symbols else live.get("events_formatted", "")
-            field_players.append({
-                "pid": pid,
-                "name": name,
-                "role": role,
-                "club": club,
-                "vote": raw_vote,
-                "fanta_vote": fv,
-                "events_formatted": ev_str,
-                "is_sub": False,
-                "is_base_vote": False,
-                "status": "Votato",
-            })
-        elif is_match_finished:
-            sub_found = None
-            if len(substitutions_done) < max_subs:
-                candidates = []
-                for b in bench:
-                    b_pid = b.get("pid")
-                    if b_pid in used_bench_pids:
-                        continue
-                    b_master = master_players.get(b_pid, {})
-                    b_live = live_votes.get(b_pid, {})
-                    b_role = b_master.get("role") or b_live.get("role") or b.get("r") or "?"
-                    b_name = b_master.get("name") or b_live.get("name") or f"ID:{b_pid}"
-                    b_club = b_master.get("club", "-")
-                    b_tname = b_master.get("tname", "").upper()
-                    b_match_status = teams_status.get(b_tname, None)
-                    b_is_finished = b_match_status == 4
-                    b_vote = b_live.get("vote")
-                    b_has_vote = b_vote is not None and 0 < b_vote <= 10
+    def voted(p: dict, **extra) -> dict:
+        live = p["live"]
+        fv, symbols = calculate_player_fanta_vote(
+            pure_vote=live.get("vote"),
+            role=p["role"],
+            events_dict=live.get("events_dict"),
+            league_settings=league_settings,
+            fallback_fv=live.get("fanta_vote"),
+        )
+        return {
+            "pid": p["pid"], "name": p["name"], "role": p["role"], "club": p["club"],
+            "vote": live.get("vote"),
+            "fanta_vote": fv if fv is not None else (live.get("fanta_vote") or live.get("vote")),
+            "events_formatted": " ".join(symbols) if symbols else live.get("events_formatted", ""),
+            "is_sub": False, "is_base_vote": False, "status": "Votato",
+            **extra,
+        }
 
-                    if b_is_finished and not b_has_vote:
-                        continue
+    def provisional(p: dict, **extra) -> dict:
+        """Voto base 6.0 per chi non ha ancora giocato (la squadra deve giocare o e' in corso)."""
+        base_vote = 6.0
+        base_fv = base_vote
+        events = ""
+        if p["role"].upper() == "P":
+            bnMls = ((league_settings or {}).get("lcnps") or {}).get("bnMls") or {}
+            bmcsh = float(bnMls.get("bmcsh", 0))
+            if bmcsh > 0:
+                base_fv = round(base_vote + bmcsh, 2)
+                events = "🧤(CS)"
+        return {
+            "pid": p["pid"], "name": p["name"], "role": p["role"], "club": p["club"],
+            "vote": base_vote, "fanta_vote": base_fv, "events_formatted": events,
+            "is_sub": False, "is_base_vote": True,
+            "status": "in corso" if p["match_status"] == 3 else "in attesa",
+            **extra,
+        }
 
-                    if role == "P":
-                        if b_role != "P":
-                            continue
-                    else:
-                        if b_role not in ("D", "C", "A"):
-                            continue
-                        if b_role != role:
-                            if sstype not in (2, 3):
-                                continue
-                            tentative_counts = dict(current_counts)
-                            tentative_counts[role] -= 1
-                            tentative_counts[b_role] += 1
-                            t_mod = f"{tentative_counts['D']}{tentative_counts['C']}{tentative_counts['A']}"
-                            if t_mod not in allowed_mods:
-                                continue
-
-                    candidates.append({
-                        "b_dict": b,
-                        "pid": b_pid,
-                        "name": b_name,
-                        "role": b_role,
-                        "club": b_club,
-                        "vote": b_vote,
-                        "live": b_live,
-                        "has_vote": b_has_vote,
-                        "match_status": b_match_status,
-                        "is_same_role": (b_role == role),
-                    })
-
-                chosen = None
-                if candidates:
-                    if sstype == 2:
-                        chosen = next((c for c in candidates if c["is_same_role"]), None)
-                        if not chosen:
-                            chosen = candidates[0]
-                    else:
-                        chosen = candidates[0]
-
-                if chosen:
-                    b_pid = chosen["pid"]
-                    b_role = chosen["role"]
-                    b_name = chosen["name"]
-                    b_club = chosen["club"]
-                    b_live = chosen["live"]
-
-                    if chosen["has_vote"]:
-                        b_vote = chosen["vote"]
-                        b_calc_fv, b_syms = calculate_player_fanta_vote(
-                            pure_vote=b_vote,
-                            role=b_role,
-                            events_dict=b_live.get("events_dict"),
-                            league_settings=league_settings,
-                            fallback_fv=b_live.get("fanta_vote"),
-                        )
-                        b_fv = b_calc_fv if b_calc_fv is not None else (b_live.get("fanta_vote") or b_vote)
-                        b_ev_str = " ".join(b_syms) if b_syms else b_live.get("events_formatted", "")
-                        is_base = False
-                        stat = f"SUB IN (per {name})"
-                    else:
-                        b_vote = 6.0
-                        b_fv = 6.0
-                        b_ev_str = ""
-                        if b_role == "P":
-                            bnMls = ((league_settings or {}).get("lcnps") or {}).get("bnMls") or {}
-                            bmcsh = float(bnMls.get("bmcsh", 0))
-                            if bmcsh > 0:
-                                b_fv = round(b_vote + bmcsh, 2)
-                                b_ev_str = "🧤(CS)"
-                        is_base = True
-                        stat = "in corso" if chosen["match_status"] == 3 else "in attesa"
-
-                    sub_found = {
-                        "pid": b_pid,
-                        "name": b_name,
-                        "role": b_role,
-                        "club": b_club,
-                        "vote": b_vote,
-                        "fanta_vote": b_fv,
-                        "events_formatted": b_ev_str,
-                        "is_sub": True,
-                        "is_base_vote": is_base,
-                        "replaced_name": name,
-                        "out_role": role,
-                        "in_role": b_role,
-                        "status": stat,
-                    }
-                    used_bench_pids.add(b_pid)
-                    current_counts[role] -= 1
-                    current_counts[b_role] += 1
-                    current_module = f"{current_counts['D']}{current_counts['C']}{current_counts['A']}"
-
-            if not sub_found and default_reserves_enabled:
-                if len(substitutions_done) < max_subs and default_reserves_used < max_default_reserves:
-                    def_val = float(
-                        (subst_settings or {}).get("ssdfg", 4)
-                        if role == "P"
-                        else (subst_settings or {}).get("ssdfm", 4)
-                    )
-                    sub_found = {
-                        "pid": pid,
-                        "name": f"Riserva d'ufficio [{role}]",
-                        "role": role,
-                        "club": "-",
-                        "vote": def_val,
-                        "fanta_vote": def_val,
-                        "events_formatted": "",
-                        "is_sub": True,
-                        "is_base_vote": False,
-                        "replaced_name": name,
-                        "out_role": role,
-                        "in_role": role,
-                        "status": f"Voto d'ufficio ({def_val:.1f})",
-                    }
-                    default_reserves_used += 1
-
-            if sub_found:
-                field_players.append(sub_found)
-                substitutions_done.append({
-                    "out_name": name,
-                    "in_name": sub_found["name"],
-                    "role": role,
-                    "out_role": role,
-                    "in_role": sub_found.get("in_role", role),
-                    "vote": sub_found["vote"],
-                    "fanta_vote": sub_found["fanta_vote"],
-                    "is_base_vote": sub_found.get("is_base_vote", False),
-                    "events_formatted": sub_found.get("events_formatted", ""),
-                })
-            else:
-                field_players.append({
-                    "pid": pid,
-                    "name": name,
-                    "role": role,
-                    "club": club,
-                    "vote": None,
-                    "fanta_vote": None,
-                    "events_formatted": "",
-                    "is_sub": False,
-                    "is_base_vote": False,
-                    "status": "S.V. (non sostituito)",
-                })
+    starters = [describe(s) for s in starts]
+    field_players: list[dict | None] = []
+    for p in starters:
+        if has_vote(p["live"]):
+            field_players.append(voted(p))
+        elif p["match_status"] == 4:
+            field_players.append(None)  # partita finita senza voto: da sostituire
         else:
-            stat_label = "in corso" if match_status == 3 else "in attesa"
-            base_v = 6.0
-            base_fv = 6.0
-            base_ev_str = ""
-            if role.upper() == "P":
-                bnMls = ((league_settings or {}).get("lcnps") or {}).get("bnMls") or {}
-                bmcsh = float(bnMls.get("bmcsh", 0))
-                if bmcsh > 0:
-                    base_fv = round(base_v + bmcsh, 2)
-                    base_ev_str = "🧤(CS)"
+            field_players.append(provisional(p))
 
-            field_players.append({
-                "pid": pid,
-                "name": name,
-                "role": role,
-                "club": club,
-                "vote": base_v,
-                "fanta_vote": base_fv,
-                "events_formatted": base_ev_str,
-                "is_sub": False,
-                "is_base_vote": True,
-                "status": stat_label,
-            })
+    substitutions_done: list[dict] = []
 
-    return field_players, substitutions_done, current_module
+    # 1. Sostituti veri, in ordine di panchina, fino al massimo consentito
+    for b in bench:
+        if len(substitutions_done) >= MAX_SUBSTITUTIONS:
+            break
+        sub = describe(b)
+        sub_has_vote = has_vote(sub["live"])
+        if sub["match_status"] == 4 and not sub_has_vote:
+            continue
+        slot = next(
+            (i for i, p in enumerate(starters) if field_players[i] is None and p["role"] == sub["role"]),
+            None,
+        )
+        if slot is None:
+            continue
+        out = starters[slot]
+        extra = {"is_sub": True, "replaced_name": out["name"], "out_role": out["role"], "in_role": sub["role"]}
+        if sub_has_vote:
+            entry = voted(sub, status=f"SUB IN (per {out['name']})", **extra)
+        else:
+            entry = provisional(sub, **extra)
+        field_players[slot] = entry
+        substitutions_done.append(_substitution_record(out["name"], out["role"], entry))
+
+    # 2. Chi e' rimasto scoperto: 4 d'ufficio se restano sostituzioni libere, altrimenti 0.
+    # Finche' un titolare deve ancora giocare il 4 e' provvisorio: se quel titolare resta
+    # senza voto consuma una sostituzione e il 4 puo' diventare 0.
+    day_open = any(e is not None and e["is_base_vote"] and not e["is_sub"] for e in field_players)
+    for i, p in enumerate(starters):
+        if field_players[i] is not None:
+            continue
+        if len(substitutions_done) < MAX_SUBSTITUTIONS:
+            entry = {
+                "pid": p["pid"], "name": f"Riserva d'ufficio [{p['role']}]", "role": p["role"], "club": "-",
+                "vote": OFFICE_VOTE, "fanta_vote": OFFICE_VOTE, "events_formatted": "",
+                "is_sub": True, "is_base_vote": False, "is_default_reserve": True,
+                "replaced_name": p["name"], "out_role": p["role"], "in_role": p["role"],
+                "status": f"Voto d'ufficio ({OFFICE_VOTE:.1f})" + (" provvisorio" if day_open else ""),
+            }
+            field_players[i] = entry
+            substitutions_done.append(_substitution_record(p["name"], p["role"], entry))
+        else:
+            field_players[i] = {
+                "pid": p["pid"], "name": p["name"], "role": p["role"], "club": p["club"],
+                "vote": None, "fanta_vote": None, "events_formatted": "",
+                "is_sub": False, "is_base_vote": False,
+                "status": f"0 (oltre le {MAX_SUBSTITUTIONS} sostituzioni)",
+            }
+
+    counts = {"D": 0, "C": 0, "A": 0}
+    for p in starters:
+        if p["role"] in counts:
+            counts[p["role"]] += 1
+    module = initial_module or f"{counts['D']}{counts['C']}{counts['A']}"
+    return field_players, substitutions_done, module
 
 
 def calculate_defense_modifier(
@@ -831,12 +723,14 @@ def calculate_defense_modifier(
     if not smodd or not smodd.get("smodva"):
         return 0.0, "Disattivato"
 
+    # La riserva d'ufficio non conta: e' come aver schierato un difensore in meno
+    real_players = [p for p in field_players if not p.get("is_default_reserve")]
     gk = next(
-        (p for p in field_players if p.get("role") == "P" and p.get("vote") is not None and 0 < p.get("vote") <= 10),
+        (p for p in real_players if p.get("role") == "P" and p.get("vote") is not None and 0 < p.get("vote") <= 10),
         None,
     )
     defenders = [
-        p for p in field_players if p.get("role") == "D" and p.get("vote") is not None and 0 < p.get("vote") <= 10
+        p for p in real_players if p.get("role") == "D" and p.get("vote") is not None and 0 < p.get("vote") <= 10
     ]
 
     include_gk = smodd.get("smoddg", True)
@@ -911,7 +805,6 @@ def process_team_lineup(
     bench = team_raw.get("bench") or []
 
     smodd = (league_settings.get("lcnps") or {}).get("smodd")
-    subst_settings = (league_settings.get("lcnps") or {}).get("subst")
     step_settings = (league_settings.get("lcnps") or {}).get("step") or {}
 
     if is_calculated:
@@ -1056,7 +949,6 @@ def process_team_lineup(
             master_players=master_players,
             live_votes=live_votes,
             teams_status=teams_status,
-            subst_settings=subst_settings,
             league_settings=league_settings,
             initial_module=mdl,
         )
@@ -1400,7 +1292,6 @@ def get_silver_live_data(
 
     step_settings = (league_settings.get("lcnps") or {}).get("step") or {}
     smodd = (league_settings.get("lcnps") or {}).get("smodd")
-    subst = (league_settings.get("lcnps") or {}).get("subst") or {}
 
     finished_teams = sorted(k for k, v in teams_status.items() if v == 4)
     playing_teams = sorted(k for k, v in teams_status.items() if v == 3)
@@ -1426,8 +1317,7 @@ def get_silver_live_data(
             "first_goal_threshold": float(step_settings.get("stlmt", 66)),
             "goal_step": float((step_settings.get("stgoal") or [4])[0]),
             "defense_modifier_active": bool(smodd and smodd.get("smodva")),
-            "max_substitutions": int(subst.get("ssnum", 5)),
-            "substitution_type": int(subst.get("sstype", 3)),
+            "max_substitutions": MAX_SUBSTITUTIONS,
         },
         "standings": standings,
     }
