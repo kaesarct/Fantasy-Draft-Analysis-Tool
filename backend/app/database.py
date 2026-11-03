@@ -198,7 +198,7 @@ def _migrate_dedupe_players():
     se non ci sono piu' duplicati non fa nulla."""
     from sqlalchemy import func
     from app.models.player import Player, PlayerArchiveSeasonStat
-    from app.models.player_merge import PlayerMergeDismissal
+    from app.models.player_merge import PlayerMergeDismissal, PlayerRoleConflictConfirmation
     from app.models.fanta_team import FantaRoster
 
     db = SessionLocal()
@@ -274,6 +274,15 @@ def _migrate_dedupe_players():
                 + db.query(PlayerArchiveSeasonStat).filter(PlayerArchiveSeasonStat.player_id == old_player.id).count()
             )
             if remaining == 0:
+                # Conferme di ruolo e rifiuti di unione che puntano alla riga da eliminare
+                # (anche verso un terzo giocatore): la FK bloccherebbe la delete e l'avvio.
+                db.query(PlayerRoleConflictConfirmation).filter(
+                    PlayerRoleConflictConfirmation.player_id == old_player.id
+                ).delete()
+                db.query(PlayerMergeDismissal).filter(
+                    (PlayerMergeDismissal.player_id_low == old_player.id)
+                    | (PlayerMergeDismissal.player_id_high == old_player.id)
+                ).delete()
                 db.delete(old_player)
                 merged_players += 1
 

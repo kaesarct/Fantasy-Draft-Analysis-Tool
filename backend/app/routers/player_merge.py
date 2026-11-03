@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.player import Player, PlayerSnapshot, PlayerMatchScore, PlayerArchiveSeasonStat
 from app.models.player_merge import PlayerMergeDismissal, PlayerRoleConflictConfirmation
+from app.models.season_data import PlayerSeasonPrice, PlayerSeasonStat, PlayerSeasonVote
 from app.models.season import Season
 from app.models.season_data import PlayerSeasonStat as ExcelPlayerSeasonStat, PlayerSeasonPrice
 from app.models.fanta_team import FantaRoster, FantaRosterTempSub
@@ -351,6 +352,33 @@ _UNIQUE_TABLES = [
 ]
 
 
+def _hand_over_fanta_id(db: Session, keep: Player, remove: Player) -> None:
+    """Il giocatore rimosso puo' avere il fanta_id che lo collega allo storico
+    (quotazioni, statistiche, voti): va passato a chi resta, altrimenti quelle righe
+    restano orfane e il backfill all'avvio ricreerebbe il giocatore appena unito."""
+    if remove.fanta_id is None:
+        return
+    removed_fanta_id, remove.fanta_id = remove.fanta_id, None
+    db.flush()
+    if keep.fanta_id is None:
+        keep.fanta_id = removed_fanta_id
+        return
+    # Entrambi hanno un fanta_id: porto sull'id di chi resta lo storico che non va in conflitto
+    # (stessa stagione/giornata presente su entrambi gli id: restano due persone, non si tocca).
+    for model, key_fields in (
+        (PlayerSeasonPrice, ["season_id"]),
+        (PlayerSeasonStat, ["season_id"]),
+        (PlayerSeasonVote, ["season_id", "match_day"]),
+    ):
+        for row in db.query(model).filter(model.fanta_player_id == removed_fanta_id).all():
+            clash = db.query(model).filter(
+                model.fanta_player_id == keep.fanta_id,
+                *[getattr(model, f) == getattr(row, f) for f in key_fields],
+            ).first()
+            if not clash:
+                row.fanta_player_id = keep.fanta_id
+
+
 def _row_diff(model, keep_row, remove_row, fk_field: str) -> dict[str, dict[str, Any]]:
     """Colonne che differiscono tra le due righe in conflitto (escluse id e fk_field).
     Generico: riusabile per tutti i modelli di _UNIQUE_TABLES."""
@@ -486,6 +514,12 @@ def merge_players(payload: MergeRequest, db: Session = Depends(get_db), _admin: 
         (PlayerMergeDismissal.player_id_low == payload.remove_id)
         | (PlayerMergeDismissal.player_id_high == payload.remove_id)
     ).delete()
+    # Stesso discorso per la conferma "ruoli diversi ma e' la stessa persona" del
+    # giocatore rimosso: dopo l'unione non ha piu' senso e la FK bloccherebbe la delete.
+    db.query(PlayerRoleConflictConfirmation).filter(
+        PlayerRoleConflictConfirmation.player_id == payload.remove_id
+    ).delete()
+    _hand_over_fanta_id(db, keep, remove)
 
     db.delete(remove)
     db.commit()
