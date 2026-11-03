@@ -58,6 +58,9 @@ def init_db():
     _migrate_normalize_player_names()
     _migrate_backfill_fanta_id()
     _migrate_backfill_unknown_role()
+    # Prima della deduplica: un giocatore creato qui con lo stesso nome di uno storico
+    # senza fanta_id viene poi ricongiunto da _migrate_dedupe_players.
+    _migrate_create_missing_players()
     _migrate_dedupe_players()
     _migrate_merge_duplicate_teams()
     _migrate_seed_season_awards()
@@ -417,6 +420,22 @@ def _migrate_backfill_fanta_id():
         db.commit()
         if backfilled:
             logger.info("Backfill fanta_id: %s giocatori collegati allo storico", backfilled)
+    finally:
+        db.close()
+
+
+def _migrate_create_missing_players():
+    """Crea i Player che hanno quotazioni storiche ma nessuna riga in `players`
+    (es. usciti dalla Serie A prima della lista attuale e mai in una rosa): senza,
+    non compaiono nell'elenco Giocatori delle stagioni passate. Idempotente."""
+    from app.services.player_backfill import create_missing_players_from_prices
+
+    db = SessionLocal()
+    try:
+        created = create_missing_players_from_prices(db)
+        db.commit()
+        if created:
+            logger.info("Creati %s giocatori presenti solo nelle quotazioni storiche", created)
     finally:
         db.close()
 

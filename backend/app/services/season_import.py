@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.models.season import Season
 from app.models.season_data import ImportedSeasonData, PlayerSeasonStat, PlayerSeasonPrice, PlayerSeasonVote
 from app.services.fanta_client import fanta_client
+from app.services.player_backfill import create_missing_players_from_prices
 
 import logging
 logger = logging.getLogger(__name__)
@@ -152,6 +153,11 @@ def import_season_data(db: Session, season_id: int, data_type: str, force: bool 
     if rows == 0:
         db.rollback()
         return {"ok": False, "message": "Nessun dato trovato per questa stagione"}
+
+    if data_type == "prices":
+        created_players = create_missing_players_from_prices(db)
+        if created_players:
+            logger.info("Creati %s giocatori presenti solo nelle quotazioni di %s", created_players, season.label)
 
     if already:
         already.imported_at = datetime.utcnow()
