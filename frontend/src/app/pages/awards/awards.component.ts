@@ -74,6 +74,30 @@ const COMPETITION_LABELS: Record<string, string> = {
           </div>
         </div>
 
+        @if (records().length) {
+          <div class="card mb-4 record-panel">
+            <div class="section-title">🏅 Altri record</div>
+            <div class="record-grid">
+              @for (r of records(); track r.key) {
+                <div class="record-entry">
+                  <span class="record-label">{{ r.label }} <span class="text-muted">· {{ r.scope }}</span></span>
+                  <span class="record-value">{{ formatRecordValue(r) }}</span>
+                  @for (h of r.holders; track h.team_name + '-' + h.season_label + '-' + h.detail) {
+                    <span>
+                      {{ h.team_name }}
+                      <span class="text-muted">
+                        @if (h.season_label) { · {{ h.season_label }} }
+                        @if (h.detail) { · {{ h.detail }} }
+                      </span>
+                      @if (h.provisional) { <span class="badge badge-gold">in corso</span> }
+                    </span>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+
         <div class="section-title">📜 Storico</div>
         <div class="card history-table">
           <div class="table-scroll">
@@ -148,6 +172,7 @@ const COMPETITION_LABELS: Record<string, string> = {
 export class AwardsComponent implements OnInit {
   loading = signal(true);
   data = signal<any>(null);
+  records = signal<any[]>([]);
 
   constructor(private api: ApiService) {}
 
@@ -159,6 +184,17 @@ export class AwardsComponent implements OnInit {
       },
       error: () => this.loading.set(false),
     });
+    this.api.getAwardsRecords().subscribe({
+      next: res => this.records.set(res.records ?? []),
+      error: () => this.records.set([]),
+    });
+  }
+
+  formatRecordValue(r: any): string {
+    if (r.value === null || r.value === undefined) return '—';
+    const sign = r.key.endsWith('goal_diff') && r.value > 0 ? '+' : '';
+    const value = Number.isInteger(r.value) ? String(r.value) : r.value.toFixed(1);
+    return `${sign}${value} ${r.unit}`;
   }
 
   competitionLabel(type: string): string {

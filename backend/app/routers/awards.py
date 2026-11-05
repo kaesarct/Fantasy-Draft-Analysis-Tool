@@ -8,6 +8,7 @@ from app.models.fanta_team import FantaTeam, League
 from app.services.auth_service import require_admin
 from app.services.competition_provisioning import MAIN_LEAGUE_TYPES
 from app.services.matchdays import serie_a_days
+from app.services.records import compute_records
 
 router = APIRouter(tags=["awards"])
 
@@ -235,6 +236,13 @@ def get_awards_overview(db: Session = Depends(get_db)):
         "absolute_goku": _absolute_record(history, goku_current, "GOKU", current_season_label, pick_max=True),
         "absolute_oscar": _absolute_record(history, oscar_current, "OSCAR", current_season_label, pick_max=False),
     }
+
+
+@router.get("/awards/records")
+def get_records(db: Session = Depends(get_db)):
+    """Altri record della lega (punteggi, reti, Silver, acquisti): detentori storici
+    confrontati ad ogni richiesta con i dati, vedi app/services/records.py."""
+    return {"records": compute_records(db)}
 
 
 def _season_or_404(db: Session, season_id: int | None) -> Season:

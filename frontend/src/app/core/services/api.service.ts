@@ -423,6 +423,10 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/awards/overview`);
   }
 
+  getAwardsRecords(): Observable<any> {
+    return this.http.get<any>(`${this.base}/awards/records`);
+  }
+
   getSilverConsistency(seasonId?: number): Observable<any> {
     let params = new HttpParams();
     if (seasonId) params = params.set('season_id', seasonId);
