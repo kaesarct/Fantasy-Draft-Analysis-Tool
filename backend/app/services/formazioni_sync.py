@@ -159,9 +159,10 @@ def sync_formazioni(db: Session, season_id: int, match_day: int | None = None) -
     """Fetch di tutte le formazioni da leghe.fantacalcio.it e import strutturato.
     Di default sincronizza la giornata successiva all'ultima conclusa (quella
     per cui le formazioni sono rilevanti da controllare, non quella gia' giocata)."""
-    day = match_day if match_day is not None else fanta_client.get_last_matchday() + 1
-
+    # Il client prima della giornata: con l'integrazione leghe spenta fallisce subito, senza nemmeno
+    # la richiesta a fantacalcio.it per conoscere la giornata.
     client = LegheClient()
+    day = match_day if match_day is not None else fanta_client.get_last_matchday() + 1
     client.login()
     risultati = client.get_tutte_le_formazioni(day)
 

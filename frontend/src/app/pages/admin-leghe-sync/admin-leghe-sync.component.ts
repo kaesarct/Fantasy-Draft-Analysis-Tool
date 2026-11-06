@@ -51,12 +51,18 @@ function slugUsername(name: string): string {
             placeholder="Stagione"
             styleClass="filter-drop"
           />
-          <button pButton label="Carica da leghe.fantacalcio.it" icon="pi pi-download" [loading]="loading()" [disabled]="!selectedSeasonId" (click)="load()"></button>
-          <button pButton label="🎯 Sync punteggi + classifiche (Goku/Oscar)" class="p-button-outlined" [loading]="syncingScores()" [disabled]="!selectedSeasonId" (click)="syncMatchdayScores()"></button>
-          <button pButton label="Sync risultati/calendario" icon="pi pi-chart-bar" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="syncResults()"></button>
+          <button pButton label="Carica da leghe.fantacalcio.it" icon="pi pi-download" [loading]="loading()" [disabled]="!selectedSeasonId || !legheEnabled()" (click)="load()"></button>
+          <button pButton label="🎯 Sync punteggi + classifiche (Goku/Oscar)" class="p-button-outlined" [loading]="syncingScores()" [disabled]="!selectedSeasonId || !legheEnabled()" (click)="syncMatchdayScores()"></button>
+          <button pButton label="Sync risultati/calendario" icon="pi pi-chart-bar" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId || !legheEnabled()" (click)="syncResults()"></button>
           <button pButton label="Carica Excel (calendari e formazioni)" icon="pi pi-upload" class="p-button-outlined" [loading]="syncingResults()" [disabled]="!selectedSeasonId" (click)="calendarFile.click()"></button>
           <input #calendarFile type="file" accept=".xlsx" multiple hidden (change)="importCalendarFile($event)" />
         </div>
+        @if (!legheEnabled()) {
+          <div class="card status-msg mb-4" style="margin-top:10px;">
+            ℹ️ Le chiamate a leghe.fantacalcio.it sono disattivate (<code>LEGHE_API_ENABLED=false</code>): i pulsanti di sincronizzazione
+            sono spenti. Per risultati, classifiche e punteggi usa <strong>Carica Excel (calendari e formazioni)</strong>.
+          </div>
+        }
         <p class="text-muted" style="font-size:12px; margin-top:6px;">
           <strong>Carica Excel</strong>: alternativa senza login automatico. Scarica da leghe.fantacalcio.it
           i file delle competizioni e caricali qui anche tutti insieme, o solo quelli che hai (Coppa Italia, Ciempions, UEFA, Euro Cup possono mancare): tipo di file e competizione si riconoscono dal titolo di ogni file e, se la competizione non esiste ancora (es. UEFA), viene creata.
@@ -385,6 +391,7 @@ export class AdminLegheSyncComponent implements OnInit {
   consistency = signal<any>(null);
   renaming = signal(false);
   renameNotice = signal('');
+  legheEnabled = signal(true);
   renameChoice: Record<string, number | null> = {};
   private lastFiles: File[] = [];
 
@@ -393,6 +400,10 @@ export class AdminLegheSyncComponent implements OnInit {
   constructor(private api: ApiService) {}
 
   ngOnInit() {
+    this.api.getFeatures().subscribe({
+      next: f => this.legheEnabled.set(!!f.leghe_api_enabled),
+      error: () => {},
+    });
     this.api.getSeasons().subscribe({
       next: seasons => {
         this.seasonOptions.set(seasons.map((s: any) => ({ label: s.label, value: s.id })));

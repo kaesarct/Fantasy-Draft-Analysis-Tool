@@ -31,6 +31,7 @@ services:
       DB_NAME: ft_platform
       FANTA_USERNAME: ${FANTA_USERNAME:-}
       FANTA_PASSWORD: ${FANTA_PASSWORD:-}
+      LEGHE_API_ENABLED: ${LEGHE_API_ENABLED:-false}
       FANTA_YEAR_QUOTAZIONI: ${FANTA_YEAR_QUOTAZIONI:-24}
       FANTA_LEGA_NAME: ${FANTA_LEGA_NAME:-}
       FANTA_SESSION_FILE: /app/session/tamarros_session.json

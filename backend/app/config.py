@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     fanta_base_url: str = "https://www.fantacalcio.it/"
     fanta_api: str = "api/v1/"
     fanta_leghe_base_url: str = "https://leghe.fantacalcio.it/"
+    # Chiamate a leghe.fantacalcio.it / apileague.fantacalcio.it (sync automatiche, Live Silver,
+    # formazioni, partecipanti). Spente di default: i risultati e le classifiche si caricano a mano
+    # da Admin -> Sync leghe (file Excel). Le chiamate a www.fantacalcio.it non dipendono da questo.
+    leghe_api_enabled: bool = False
     fanta_year_quotazioni: str = "24"
     fanta_lega_name: str = ""
     fanta_session_file: str = "./tamarros_session.json"

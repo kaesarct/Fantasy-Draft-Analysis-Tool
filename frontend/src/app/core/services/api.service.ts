@@ -427,6 +427,10 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/awards/records`);
   }
 
+  getFeatures(): Observable<{ leghe_api_enabled: boolean }> {
+    return this.http.get<{ leghe_api_enabled: boolean }>(`${this.base}/features`);
+  }
+
   getSilverConsistency(seasonId?: number): Observable<any> {
     let params = new HttpParams();
     if (seasonId) params = params.set('season_id', seasonId);

@@ -2,6 +2,7 @@
 import pandas as pd
 from datetime import datetime
 from sqlalchemy.orm import Session
+from app.config import settings
 from app.services.fanta_client import fanta_client
 from app.services.seriea_scraper import get_serie_a_injuries
 from app.models.player import Player, PlayerSnapshot, PlayerMatchScore
@@ -21,7 +22,10 @@ def _best_effort_ensure_competitions(db: Session, season_id: int) -> None:
     passaggio manuale da Gestione Squadre ne' un "Carica da
     leghe.fantacalcio.it" dedicato. Un errore qui (login leghe fallito,
     competizione ancora assente) non deve mai far fallire la sync
-    principale, che e' il suo scopo primario."""
+    principale, che e' il suo scopo primario. Con l'integrazione leghe spenta non fa nulla:
+    le competizioni nascono dal primo calendario caricato a mano."""
+    if not settings.leghe_api_enabled:
+        return
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
         return

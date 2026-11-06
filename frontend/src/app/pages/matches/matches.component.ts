@@ -23,7 +23,8 @@ import { AuthService } from '../../core/services/auth.service';
               label="Sync formazioni"
               icon="pi pi-refresh"
               [loading]="syncing()"
-              [disabled]="!currentSeasonId()"
+              [disabled]="!currentSeasonId() || !legheEnabled()"
+              [attr.title]="legheEnabled() ? null : 'Integrazione con leghe.fantacalcio.it disattivata (LEGHE_API_ENABLED=false)'"
               (click)="syncFormazioni()"
             ></button>
           }
@@ -126,11 +127,16 @@ export class MatchesComponent implements OnInit {
   syncing = signal(false);
   syncMessage = signal('');
   syncIsError = signal(false);
+  legheEnabled = signal(true);
   syncReport = signal<{ name: string; ok: boolean; detail: string }[]>([]);
 
   constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit() {
+    this.api.getFeatures().subscribe({
+      next: f => this.legheEnabled.set(!!f.leghe_api_enabled),
+      error: () => {},
+    });
     this.api.getNextMatches().subscribe({
       next: data => { this.matches.set(data); this.loading.set(false); },
       error: ()  => this.loading.set(false),

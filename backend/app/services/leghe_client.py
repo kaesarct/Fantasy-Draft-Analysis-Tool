@@ -36,11 +36,25 @@ BROWSER_HEADERS = {
 }
 
 
+LEGHE_DISABLED_MESSAGE = (
+    "Integrazione con leghe.fantacalcio.it disattivata (LEGHE_API_ENABLED=false): "
+    "carica i file Excel (calendari e formazioni) da Admin → Sync leghe."
+)
+
+
+class LegheDisabledError(RuntimeError):
+    """Chiamate a leghe.fantacalcio.it disattivate da configurazione."""
+
+
 class LegheClient:
     LOGIN_URL = "https://apileague.fantacalcio.it/onboarding/v1/login"
     APILEAGUE_BASE = "https://apileague.fantacalcio.it"
 
     def __init__(self, alias_lega: str | None = None, app_key: str | None = None):
+        # Unico punto di blocco: ogni sync, il Live e le formazioni creano un LegheClient prima di
+        # qualunque richiesta, quindi con l'integrazione spenta non parte nessuna chiamata di rete.
+        if not settings.leghe_api_enabled:
+            raise LegheDisabledError(LEGHE_DISABLED_MESSAGE)
         self.alias_lega = alias_lega or settings.fanta_lega_name
         self.lega_page_url = f"{settings.fanta_leghe_base_url}{self.alias_lega}"
         self.session = requests.Session()

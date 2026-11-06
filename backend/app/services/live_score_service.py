@@ -29,7 +29,7 @@ from app.config import settings
 from app.models.fanta_allenatore import FantaAllenatore
 from app.models.fanta_team import FantaTeam, FantaTeamCoach, League
 from app.models.season import Season
-from app.services.leghe_client import BROWSER_HEADERS, LegheClient
+from app.services.leghe_client import BROWSER_HEADERS, LEGHE_DISABLED_MESSAGE, LegheClient, LegheDisabledError
 
 logger = logging.getLogger(__name__)
 
@@ -1126,6 +1126,9 @@ def get_silver_live_data(
     force_refresh: bool = False,
 ) -> dict:
     """Calcola la classifica e il dettaglio formazioni Live per la competizione SILVER."""
+    if not settings.leghe_api_enabled:
+        # Le formazioni di lega esistono solo su leghe.fantacalcio.it: senza, il Live non ha di che calcolare.
+        raise LegheDisabledError(LEGHE_DISABLED_MESSAGE)
     cache_key = serie_a_day or 0
     now = time.time()
     if not force_refresh and cache_key in _cached_results:

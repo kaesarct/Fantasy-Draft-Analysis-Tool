@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services.leghe_client import LegheDisabledError
 from app.services.live_score_service import get_silver_live_data
 
 router = APIRouter(prefix="/live", tags=["live"])
@@ -29,6 +30,9 @@ def get_silver_live(
     """
     try:
         return get_silver_live_data(db=db, serie_a_day=match_day, force_refresh=refresh)
+    except LegheDisabledError as exc:
+        # Il Live usa le formazioni di lega, che esistono solo su leghe.fantacalcio.it.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=502,

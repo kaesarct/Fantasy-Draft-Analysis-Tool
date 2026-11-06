@@ -15,7 +15,7 @@ from app.models.season import Season
 from app.models.fanta_team import FantaTeam, FantaTeamCoach, FantaTeamLineage, League
 from app.models.fanta_allenatore import FantaAllenatore
 from app.services.auth_service import require_admin
-from app.services.leghe_client import LegheClient
+from app.services.leghe_client import LegheClient, LegheDisabledError
 from app.services.leghe_competition_sync import ensure_competitions
 from app.services.leghe_results_sync import _name_key, import_calendar_file, sync_results
 from app.services.leghe_lineup_scores_sync import sync_matchday_scores
@@ -34,6 +34,9 @@ def _leghe_errors(func):
             return func(*args, **kwargs)
         except HTTPException:
             raise
+        except LegheDisabledError as e:
+            # Non e' un guasto: l'integrazione e' spenta da configurazione, si usa il caricamento manuale.
+            raise HTTPException(503, str(e))
         except requests.HTTPError as e:
             logger.exception("Errore HTTP da leghe.fantacalcio.it")
             resp = e.response
